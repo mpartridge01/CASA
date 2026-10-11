@@ -5,6 +5,8 @@
 /* Notes:
 1. Sets up global directories for all users once added to this script
 2. Code lives on GitHub ($github); data lives on OneDrive ($onedrive)
+3. Go to /ado and follow the README instructions to add all the ado files to 
+   your personal ado file location
 */
 
 *==============================================================================*
@@ -13,11 +15,13 @@
 clear all
 set more off, permanently
 set type double, permanently
-//version 18.0
 
 *==============================================================================*
 *              Set paths based on user and operating system                    *
 *==============================================================================*
+
+* display operating system to help set globals
+di as text "Operating system: `c(os)'  |  Username: `c(username)'"
 
 * Michael's MacBook
 if "`c(os)'" == "MacOSX" & "`c(username)'" == "mpart" {
@@ -31,6 +35,7 @@ if "`c(os)'" == "MacOSX" & "`c(username)'" == "mpart" {
 *	global onedrive "path/to/OneDrive/CASA folder"
 * }
 
+* Send back an error so it is clear that global directories are not being set
 else {
 	di as error "User `c(username)' on `c(os)' not recognized. Add your paths to SetGlobals.do."
 	exit 198
