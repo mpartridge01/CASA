@@ -28,6 +28,11 @@ if "`c(os)'" == "MacOSX" & "`c(username)'" == "mpart" {
 	global github   "/Users/mpart/Documents/GitHub/CASA"
 	global onedrive "/Users/mpart/Library/CloudStorage/OneDrive-UCSanDiego/Marsh, Emily's files - CASA"
 }
+* Emily's PC
+if "`c(os)'" == "windows" & "`c(username)'" == "emi" {
+	global github "C:\Users\emi\Documents\GitHub\CASA"
+	global onedrive "C:\Users\emi\OneDrive - UC San Diego\Research\CASA\data"
+}
 
 * Template for additional users (fill in username from c(username) and paths)
 * else if "`c(os)'" == "MacOSX" & "`c(username)'" == "username_here" {
