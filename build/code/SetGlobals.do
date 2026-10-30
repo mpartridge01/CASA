@@ -29,7 +29,7 @@ if "`c(os)'" == "MacOSX" & "`c(username)'" == "mpart" {
 	global onedrive "/Users/mpart/Library/CloudStorage/OneDrive-UCSanDiego/Marsh, Emily's files - CASA"
 }
 * Emily's PC
-if "`c(os)'" == "windows" & "`c(username)'" == "emi" {
+else if "`c(os)'" == "windows" & "`c(username)'" == "emi" {
 	global github "C:\Users\emi\Documents\GitHub\CASA"
 	global onedrive "C:\Users\emi\OneDrive - UC San Diego\Research\CASA\data"
 }
@@ -55,8 +55,8 @@ global buildcode    "$github/build/code"    // Code that imports and cleans raw 
 global analysiscode "$github/analysis/code" // Code that works with cleaned data to conduct analysis
 
 * Data globals
-global rawdata   "$onedrive/raw_data"   // Raw data
-global cleandata "$onedrive/clean_data" // Cleaned data
+global rawdata   "$onedrive/data/raw_data"   // Raw data
+global cleandata "$onedrive/data/clean_data" // Cleaned data
 
 * Output globals
 global analysisoutput "$github/analysis/output" // Tables and figures
