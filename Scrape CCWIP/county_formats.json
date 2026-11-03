@@ -1,0 +1,11 @@
+{
+ "MLOS": "{i}",
+ "exits": "{i}",
+ "case_closures": "{i}",
+ "entry_rates": "{i}",
+ "in_care_rates": "{i}",
+ "population": "{i}",
+ "reentry": "{i100:04d}",
+ "recurrence": "{i100:04d}",
+ "entry_cohort": "{i100:04d}"
+}
