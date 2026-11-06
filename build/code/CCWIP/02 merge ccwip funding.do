@@ -5,16 +5,21 @@
 ********************************************************************************
 
 ********************************************************************************
-** 							RUN GLOBALS                                       **
+*                              Run globals script                              *
 ********************************************************************************
-  ** EMF return to this **
-  
-global onedrive "C:\Users\emi\OneDrive - UC San Diego\Research\CASA\" 
+
+* Clear environment
+clear all
+macro drop _all
+
+* Find and run build/code/SetGlobals.do (runglobals.ado in PERSONAL ado folder)
+runglobals
+
 ********************************************************************************
 ** 						IMPORT FUNDING DATA                                   **
 ********************************************************************************
 
-import delimited "$onedrive\data\raw_data\CASA\casa_funding_program_fy2015_2026.csv", varnames(1) clear
+import delimited "$onedrive/data/raw_data/CASA/casa_funding_program_fy2015_2026.csv", varnames(1) clear
 
 isid program_name fiscal_year
 
@@ -29,7 +34,7 @@ preserve
 	save `funding_program'
 restore
 
-save "$onedrive\data\raw_data\CASA\casa_funding_fy2015_2026.csv", replace 
+save "$onedrive/data/raw_data/CASA/casa_funding_fy2015_2026.csv", replace 
 
 keep program_name county_* 
 collapse (firstnm) county_* , by(program_name)
@@ -46,7 +51,7 @@ drop if mi(county)
 
 duplicates drop county program_name, force
 
-merge 1:m county using "$onedrive\data\raw_data\CCWIP/CCWIP_county.dta"
+merge 1:m county using "$onedrive/data/raw_data/CCWIP/CCWIP_county.dta"
 	assert _m != 1 
 	** _m == 2 because some counties (Alpine, Colusa, Sierra, Trinity, Tuolumne) don't have CASA programs at all. 
 	drop _m 

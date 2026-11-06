@@ -3,13 +3,24 @@
 ** Date: 10/12/2026
 ** Author: Emily Marsh
 ********************************************************************************
-global onedrive "C:\Users\emi\OneDrive - UC San Diego\Research\CASA\" 
 
+********************************************************************************
+*                              Run globals script                              *
+********************************************************************************
+
+* Clear environment
+clear all
+macro drop _all
+
+* Find and run build/code/SetGlobals.do (runglobals.ado in PERSONAL ado folder)
+runglobals
+
+********************************************************************************
 
 ** Importing data - first round of separate variables that had to be scraped, second round those downloaded directly (slightly different naming conventions). ** 
 foreach var in case_closures entry_cohort entry_rates exits in_care_rates MLOS population recurrence reentry {
 	clear
-	import delimited using "$onedrive\data\raw_data\CCWIP\tidy/`var'_panel.csv", varn(1)
+	import delimited using "$onedrive/data/raw_data/CCWIP/tidy/`var'_panel.csv", varn(1)
 	
 	cap tostring period , replace 
 	
@@ -32,7 +43,7 @@ save `scrape'
 
 foreach var in entries place_stability {
 	clear
-	import excel using "$onedrive\data\raw_data\CCWIP/`var'.xlsx", first cellra(A10:L70)
+	import excel using "$onedrive/data/raw_data/CCWIP/`var'.xlsx", first cellra(A10:L70)
 	
 	ren A county 
 	drop if mi(county) 
@@ -46,7 +57,7 @@ foreach var in entries place_stability {
 }
 
 
-import excel using  "$onedrive\data\raw_data\CCWIP/in_care.xlsx", first cellra(A8:L68) clear
+import excel using  "$onedrive/data/raw_data/CCWIP/in_care.xlsx", first cellra(A8:L68) clear
 
 	ren A county 
 	drop if mi(county) 
@@ -60,7 +71,7 @@ import excel using  "$onedrive\data\raw_data\CCWIP/in_care.xlsx", first cellra(A
 
 	
 
-import excel using  "$onedrive\data\raw_data\CCWIP/recur_malt.xlsx", first cellra(A8:L68) clear
+import excel using  "$onedrive/data/raw_data/CCWIP/recur_malt.xlsx", first cellra(A8:L68) clear
 
 	ren A county 
 	drop if mi(county) 
@@ -73,7 +84,7 @@ import excel using  "$onedrive\data\raw_data\CCWIP/recur_malt.xlsx", first cellr
 	save `recur_malt_data'
 
 	
-import excel using  "$onedrive\data\raw_data\CCWIP/permanence_12m.xlsx", first cellra(A13:L73) clear
+import excel using  "$onedrive/data/raw_data/CCWIP/permanence_12m.xlsx", first cellra(A13:L73) clear
 
 	ren A county 
 	drop if mi(county) 
@@ -85,7 +96,7 @@ import excel using  "$onedrive\data\raw_data\CCWIP/permanence_12m.xlsx", first c
 	tempfile permanence_12m_data
 	save `permanence_12m_data'
 	
-import excel using  "$onedrive\data\raw_data\CCWIP/reentry2.xlsx", first cellra(A13:L73) clear
+import excel using  "$onedrive/data/raw_data/CCWIP/reentry2.xlsx", first cellra(A13:L73) clear
 
 	ren A county 
 	drop if mi(county) 
@@ -97,7 +108,7 @@ import excel using  "$onedrive\data\raw_data\CCWIP/reentry2.xlsx", first cellra(
 	tempfile reentry2_data
 	save `reentry2_data'
 	
-import excel using "$onedrive\data\raw_data\CCWIP/stability.xlsx", first cellra(A9:L69) clear 
+import excel using "$onedrive/data/raw_data/CCWIP/stability.xlsx", first cellra(A9:L69) clear 
 
 	ren A county 
 	drop if mi(county) 
@@ -131,4 +142,4 @@ merge 1:1 county year using `scrape'
 	
 	drop _m 
 	
-save "$onedrive\data\raw_data\CCWIP/CCWIP_county.dta", replace 
+save "$onedrive/data/raw_data/CCWIP/CCWIP_county.dta", replace 
