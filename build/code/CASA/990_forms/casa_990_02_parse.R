@@ -11,7 +11,7 @@ source(here::here("build", "code", "SetGlobals.R"))
 # Notes:
 # 1. Reads every XML return saved by casa_990_01_download.R, adds the returns
 #    hand-entered from PDFs, and builds:
-#      cleandata/casa_990_panel.csv            one row per EIN x fiscal year
+#      cleandata/CASA/990_forms/casa_990_panel.csv            one row per EIN x fiscal year
 #      cleandata/CASA/990_forms/casa_990_other_expenses.csv   Part IX line 24a-d items (long, XML only)
 #      cleandata/CASA/990_forms/casa_990_program_services.csv Part III line 4a-4d (long, XML only)
 #      cleandata/CASA/990_forms/casa_990_codebook.csv         description of panel variables
@@ -22,9 +22,19 @@ source(here::here("build", "code", "SetGlobals.R"))
 # 4. On a full 990, a blank line is omitted from the XML, so missing amounts
 #    are set to 0. Employee/volunteer counts stay missing if not reported.
 # 5. casa_* variables use Part III to find the CASA program's expenses in
-#    multi-program organizations (tiers B and C). casa_line_is_other = 1 means
-#    CASA was lumped into line 4d "Other" with other programs, so casa_exp is
-#    NOT a CASA-only number.
+#    multi-program organizations (tiers B, C and D):
+#    - casa_line / casa_exp: the first Part III line whose description names
+#      CASA explicitly ("CASA", "CASAs", "C.A.S.A.", "court appointed",
+#      "special advocate") and its expenses. Blank if no line names CASA.
+#    - casa_line_is_other = 1: that line is 4d "Other program services".
+#    - casa_line_only: 1 = the line covers only the CASA program; 0 = it
+#      combines CASA with other programs. Hand-coded for tiers B-D in
+#      rawdata/CASA/990_forms/casa_990_casa_line_coding.csv; 1 for tier A.
+#    - casa_exp_only: casa_exp when casa_line_only = 1, else missing. This is
+#      the CASA-only expense figure.
+#    Every tier B-D CASA line, with its description and coding, is written to
+#    cleandata/CASA/990_forms/casa_990_casa_line_review.csv. Uncoded lines are
+#    reported by this script and by casa_990_03_check.R.
 # 6. Returns with no XML (paper filings) are entered by hand from the PDF in
 #      rawdata/CASA/990_forms/casa_990_pdf_entry.csv
 #    using the same variable names as the panel (see pdf_vars below). This
@@ -38,15 +48,6 @@ source(here::here("build", "code", "SetGlobals.R"))
 # 8. Checks on every row (XML and PDF alike) are in casa_990_03_check.R.
 #    chk_flag here is a quick summary of the within-return add-up checks.
 # 9. Packages (tidyverse, xml2) are loaded in SetGlobals.R.
-
-#==============================================================================#
-
-
-# Clear environment
-rm(list = ls())
-
-# Find and run build/code/SetGlobals.R (here() locates the CASA repo root)
-source(here::here("build", "code", "SetGlobals.R"))
 
 #==============================================================================#
 
@@ -70,6 +71,17 @@ fy_start_of <- function(yyyymm) {
   yr <- as.integer(substr(yyyymm, 1, 4))
   mo <- as.integer(substr(yyyymm, 5, 6))
   ifelse(mo >= 7, yr, yr - 1)
+}
+
+# Tax period dates from YYYYMM, for returns with no XML header (PDF rows).
+# Assumes a 12-month tax year ending on the last day of month YYYYMM.
+period_end_of <- function(yyyymm) {
+  yr <- as.integer(substr(yyyymm, 1, 4)); mo <- as.integer(substr(yyyymm, 5, 6))
+  as.character(as.Date(sprintf("%d-%02d-01", ifelse(mo == 12, yr + 1, yr), ifelse(mo == 12, 1, mo + 1))) - 1)
+}
+period_begin_of <- function(yyyymm) {
+  yr <- as.integer(substr(yyyymm, 1, 4)); mo <- as.integer(substr(yyyymm, 5, 6))
+  sprintf("%d-%02d-01", ifelse(mo == 12, yr, yr - 1), ifelse(mo == 12, 1, mo + 1))
 }
 
 # Part IX lines: variable stub = XML group name
@@ -111,7 +123,7 @@ cols9 <- c(tot = "TotalAmt", prog = "ProgramServicesAmt", mgmt = "ManagementAndG
 #                       Parse one Form 990 return                              #
 #==============================================================================#
 
-parse_990 <- function(f9) {
+parse_990 <- function(f9, doc) {
   row <- list(
     # Part I / Part V: people
     emp_count = num(f9, "./TotalEmployeeCnt", NA),
@@ -197,6 +209,30 @@ parse_990 <- function(f9) {
       desc    = map_chr(grps, \(g) paste(xml_text(xml_find_all(g, "./Desc")), collapse = " "))
     ))
   }
+  # Line 4d "Other program services". Older returns report it only as totals
+  # (TotalOtherProgSrvc*Amt, no group) with the description on Schedule O.
+  # Newer returns may also put the description on Schedule O only.
+  sched_o   <- xml_find_all(doc, "//IRS990ScheduleO/SupplementalInformationDetail")
+  ref_4d    <- str_detect(map_chr(sched_o, \(n) coalesce(txt(n, "./FormAndLineReferenceDesc"), "")),
+                          regex("PART\\s*III.*4\\s*\\(?D\\b|OTHER PROGRAM SERVICES", ignore_case = TRUE))
+  desc_4d_o <- str_squish(paste(map_chr(sched_o[ref_4d], \(n) coalesce(txt(n, "./ExplanationTxt"), "")),
+                                collapse = " "))
+  exp_4d    <- num(f9, "./TotalOtherProgSrvcExpenseAmt", NA)
+
+  if (!"4d" %in% prog$line && !is.na(exp_4d)) {
+    prog <- bind_rows(prog, tibble(
+      line    = "4d",
+      expense = exp_4d,
+      grants  = num(f9, "./TotalOtherProgSrvcGrantAmt", NA),
+      revenue = num(f9, "./TotalOtherProgSrvcRevenueAmt", NA),
+      desc    = desc_4d_o
+    ))
+  } else if (desc_4d_o != "") {
+    prog <- prog |>
+      mutate(desc = ifelse(line == "4d" & !str_detect(desc, fixed(str_sub(desc_4d_o, 1, 60))),
+                           str_squish(paste(desc, desc_4d_o)), desc))
+  }
+
   prog <- filter(prog, !is.na(expense) | desc != "")
 
   row$parse_fail <- as.integer(is.na(row$rev_total) & is.na(row$exp_total_tot))
@@ -273,7 +309,7 @@ parse_file <- function(f) {
     amended        = as.integer(!is.na(txt(doc, "//AmendedReturnInd")))
   )
 
-  out <- if (form == "990") parse_990(xml_find_first(doc, "//IRS990"))
+  out <- if (form == "990") parse_990(xml_find_first(doc, "//IRS990"), doc)
          else parse_990ez(xml_find_first(doc, "//IRS990EZ"))
 
   list(
@@ -311,7 +347,8 @@ prog      <- semi_join(prog, panel, by = c("ein", "object_id"))
 #                CASA program line from Part III (tiers B and C)               #
 #==============================================================================#
 
-casa_regex <- regex("\\bCASA\\b|court[- ]appointed|special advocate", ignore_case = TRUE)
+# Explicit mentions of CASA only (also catches "SFCASA", "CASAs", "C.A.S.A.")
+casa_regex <- regex("CASAS?\\b|C\\.A\\.S\\.A|court[- ]appointed|special advocate", ignore_case = TRUE)
 
 prog <- prog |> mutate(mentions_casa = as.integer(str_detect(coalesce(desc, ""), casa_regex)))
 
@@ -404,6 +441,51 @@ if (nrow(pdf_entered) > 0) {
 }
 
 #==============================================================================#
+#          Does the CASA line cover only CASA? (hand-coded, tiers B-D)         #
+#==============================================================================#
+
+# rawdata/CASA/990_forms/casa_990_casa_line_coding.csv, one row per return:
+#   ein, tax_prd, casa_line, casa_line_only (1 = only CASA, 0 = CASA + other
+#   programs), coded_by, note. A coding only applies if casa_line still matches.
+coding_file <- file.path(indir, "casa_990_casa_line_coding.csv")
+coding <- if (file.exists(coding_file)) {
+  read_csv(coding_file, col_types = cols(.default = "c")) |>
+    transmute(ein = str_pad(ein, 9, pad = "0"), tax_prd, casa_line,
+              casa_line_only = as.integer(casa_line_only), casa_coding_note = note)
+} else {
+  tibble(ein = character(), tax_prd = character(), casa_line = character(),
+         casa_line_only = integer(), casa_coding_note = character())
+}
+if (!"casa_line" %in% names(panel)) panel$casa_line <- NA_character_
+if (!"casa_exp" %in% names(panel))  panel$casa_exp  <- NA_real_
+
+panel <- panel |>
+  select(-any_of(c("casa_line_only", "casa_exp_only"))) |>
+  left_join(coding, by = c("ein", "tax_prd", "casa_line")) |>
+  left_join(programs |> distinct(ein, .tier = tier), by = "ein") |>
+  mutate(
+    casa_line_only = case_when(
+      is.na(casa_line)        ~ NA_integer_,
+      !is.na(casa_line_only)  ~ casa_line_only,
+      .tier == "A"            ~ 1L,          # the organization is the CASA program
+      TRUE                    ~ NA_integer_  # tier B-D, not yet coded
+    ),
+    casa_exp_only = ifelse(casa_line_only %in% 1L, casa_exp, NA_real_)
+  )
+
+casa_review <- panel |>
+  filter(!is.na(casa_line), .tier != "A") |>
+  left_join(prog |> select(ein, object_id, casa_line = line, desc), by = c("ein", "object_id", "casa_line")) |>
+  transmute(ein, tier = .tier, tax_prd, source, casa_line, casa_exp, casa_line_only,
+            status = ifelse(is.na(casa_line_only), "UNCODED", "coded"), casa_coding_note, desc) |>
+  arrange(status != "UNCODED", ein, tax_prd)
+
+n_uncoded <- sum(casa_review$status == "UNCODED")
+if (n_uncoded > 0) message(n_uncoded, " tier B-D CASA line(s) not yet coded; see casa_990_casa_line_review.csv",
+                           " and add them to casa_990_casa_line_coding.csv")
+panel <- select(panel, -.tier, -casa_coding_note)
+
+#==============================================================================#
 #                     Derived variables, quick checks                          #
 #==============================================================================#
 
@@ -418,6 +500,10 @@ part9_tot <- c(paste0(names(part9), "_tot"), "exp_other_itemized_tot")
 
 panel <- panel |>
   mutate(
+    # PDF rows have no XML header: fill the tax period dates from tax_prd
+    # (all 17 PDF returns were checked to be full 12-month years)
+    tax_prd_end   = coalesce(tax_prd_end, period_end_of(tax_prd)),
+    tax_prd_begin = coalesce(tax_prd_begin, period_begin_of(tax_prd)),
     casa_line_is_other = coalesce(casa_line_is_other, as.integer(casa_line == "4d")),
     fy_start = fy_start_of(tax_prd),
     fy_end   = fy_start + 1,
@@ -447,6 +533,7 @@ panel <- panel |>
                 tier = first(tier)),
     by = "ein"
   ) |>
+  relocate(casa_line_only, casa_exp_only, .after = casa_line_is_other) |>
   relocate(programs, counties, tier, ein, org_name, fy, fy_start, fy_end, tax_prd,
            form, source, amended, n_versions, object_id, schema_version, parse_fail, chk_flag) |>
   arrange(programs, tax_prd)
@@ -465,6 +552,9 @@ codebook <- c(
   fy_start = "Start year of CA state FY",
   fy_end = "End year of CA state FY",
   tax_prd = "Month org's fiscal year ended (YYYYMM)",
+  tax_prd_begin = "First day of tax period (XML header; PDF rows: derived from tax_prd, 12-month year)",
+  tax_prd_end = "Last day of tax period (XML header; PDF rows: derived from tax_prd)",
+  schema_version = "IRS XML schema version (XML only)",
   form = "990 or 990EZ",
   source = "xml = parsed from e-filed XML; pdf_manual = hand-entered from PDF",
   amended = "1 = amended return",
@@ -509,7 +599,9 @@ codebook <- c(
   prog_exp_total = "Total program service expenses (Part III line 4e; EZ Part III)",
   casa_line = "Part III line describing CASA",
   casa_exp = "Expenses on Part III line describing CASA",
-  casa_line_is_other = "CASA lumped into Part III line 4d Other",
+  casa_line_is_other = "CASA line is Part III line 4d Other program services",
+  casa_line_only = "1 = CASA line covers only CASA; 0 = CASA + other programs (hand-coded tiers B-D; 1 for tier A)",
+  casa_exp_only = "CASA-only program expenses: casa_exp if casa_line_only = 1",
   assets_boy = "Total assets, beginning of year (X 16; EZ 25)",
   assets_eoy = "Total assets, end of year (X 16; EZ 25)",
   liab_boy = "Total liabilities, beginning of year (X 26; EZ 26)",
@@ -535,10 +627,11 @@ codebook <- tibble(variable = names(panel)) |>
 #                                Save                                          #
 #==============================================================================#
 
-write_csv(panel,     file.path(cleandata, "/CASA/990_forms/casa_990_panel.csv"), na = "")
-write_csv(other_exp, file.path(cleandata, "/CASA/990_forms/casa_990_other_expenses.csv"), na = "")
-write_csv(prog,      file.path(cleandata, "/CASA/990_forms/casa_990_program_services.csv"), na = "")
-write_csv(codebook,  file.path(cleandata, "/CASA/990_forms/casa_990_codebook.csv"), na = "")
+write_csv(panel,     file.path(cleandata, "CASA", "990_forms", "casa_990_panel.csv"), na = "")
+write_csv(other_exp, file.path(cleandata, "CASA", "990_forms", "casa_990_other_expenses.csv"), na = "")
+write_csv(prog,      file.path(cleandata, "CASA", "990_forms", "casa_990_program_services.csv"), na = "")
+write_csv(codebook,  file.path(cleandata, "CASA", "990_forms", "casa_990_codebook.csv"), na = "")
+write_csv(casa_review, file.path(cleandata, "CASA", "990_forms", "casa_990_casa_line_review.csv"), na = "")
 
 # Quick look
 panel |>

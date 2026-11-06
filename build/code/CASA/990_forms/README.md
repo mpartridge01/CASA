@@ -22,6 +22,7 @@ These scripts build a panel of revenue, expenses, staffing and balance-sheet dat
 | 1 | `casa_990_01_download.R` | ~5–15 min first time, ~2 min after | Yes | First time, and whenever newer returns may be available |
 | 2 | `casa_990_02_parse.R` | ~1 min | No | After step 1, or after editing `casa_990_pdf_entry.csv` |
 | 3 | `casa_990_03_check.R` | Seconds | No | After every run of step 2 |
+| 4 | `casa_990_04_import.do` (Stata) | Seconds | No | After step 3 passes |
 
 Each script starts with:
 
@@ -46,17 +47,21 @@ GivingTuesday XML archive ─┘               ├── casa_990_programs.csv
 Hand-saved recent XMLs ─────────────────► raw_data/CASA/990_forms/FY_*/        (by hand; see raw README)
 Hand-downloaded PDFs ───────────────────► raw_data/CASA/990_forms/FY_*/*.pdf  (by hand)
 PDF transcription ──────────────────────► raw_data/CASA/990_forms/casa_990_pdf_entry.csv
+CASA line coding (by hand) ─────────────► raw_data/CASA/990_forms/casa_990_casa_line_coding.csv
 
 raw_data/CASA/990_forms/ ──► 02_parse ──► clean_data/CASA/990_forms/
                                            ├── casa_990_panel.csv
                                            ├── casa_990_codebook.csv
                                            ├── casa_990_other_expenses.csv
-                                           └── casa_990_program_services.csv
+                                           ├── casa_990_program_services.csv
+                                           └── casa_990_casa_line_review.csv
                              02_parse ──► raw_data/CASA/990_forms/casa_990_pdf_entry_template.csv
 
 clean_data + raw index ───► 03_check ───► clean_data/CASA/990_forms/
                                            ├── casa_990_coverage.csv
                                            └── casa_990_check_report.csv
+
+clean_data panel ──────────► 04_import.do ──► clean_data/CASA/990_forms/casa_990_panel.dta
 ```
 
 ---
@@ -128,22 +133,23 @@ The R version of `SetGlobals.do`. It sets folder paths by computer and user, and
    - Part I: employees, volunteers, current and prior-year total revenue and expenses, investment income.
    - Part VIII: revenue lines 1a–1h, 2g, 3, 8a–8c, other revenue and total revenue.
    - Part IX: all 30 expense lines × 4 columns (total, program, management, fundraising), the itemized 24a–d lines and the line 25 totals.
-   - Part III: each program line (4a–4d) with its description, expenses, grants and revenue, plus the program total.
+   - Part III: each program line (4a–4d) with its description, expenses, grants and revenue, plus the program total. On older XMLs that have no line 4d group, line 4d is built from `TotalOtherProgSrvcExpenseAmt`, `…GrantAmt` and `…RevenueAmt`, and its description is taken from the Schedule O entry for Part III line 4d (or text starting "OTHER PROGRAM SERVICES"). Schedule O text of that kind is also added to an existing 4d description.
    - Part X: beginning and end-of-year total assets, liabilities and net assets.
 3. **Form 990-EZ** (`parse_990ez()`): EZ lines 1–9 (revenue), 10–17 (expenses), Part II balance sheet, and Part III program lines.
 4. **Blank lines:** a line left off a full 990's XML is set to 0. A missing count (employees, volunteers) or missing total stays `NA`. `parse_fail = 1` if neither total revenue nor total expenses could be read (an older XML schema). None did.
 5. **Amended returns:** when there are several filings for one EIN × tax period, keeps the one with the highest object ID (the latest). `n_versions` and `amended` record this.
-6. **CASA program line:** finds the Part III line whose description matches `CASA`, `court appointed` or `special advocate` (case-insensitive) → `casa_line`, `casa_exp`, `casa_line_is_other` (1 if it is line 4d "Other").
+6. **CASA program line:** finds the first Part III line whose description matches `casa_regex` (`CASA` or `CASAS` as a word, `C.A.S.A`, `court appointed`/`court-appointed`, or `special advocate`; case-insensitive) → `casa_line`, `casa_exp`, `casa_line_is_other` (1 if it is line 4d).
 7. **PDF returns:**
    - Writes `raw_data/CASA/990_forms/casa_990_pdf_entry_template.csv`, one blank row (with every column) for each return in the filing index that still has no data. When everything is entered, it is header-only.
    - Reads `raw_data/CASA/990_forms/casa_990_pdf_entry.csv` (never writes to it), converts the amounts to numbers (commas and `$` are allowed), and adds the rows with `source = "pdf_manual"`. If an XML now exists for the same EIN × tax period, the PDF row is dropped with a message.
    - `pdf_vars` in the script lists every variable that can be entered by hand.
-8. **Derived variables:** `fy`, `fy_start`, `fy_end` (state FY in which the tax year ends); `exp_personnel_tot` (Part IX lines 5–10, or EZ line 12); and quick checks `chk_contrib_diff`, `chk_exp_diff`, `chk_flag`. These are computed the same way for XML and PDF rows.
+8. **Derived variables:** `fy`, `fy_start`, `fy_end` (state FY in which the tax year ends); `tax_prd_begin`, `tax_prd_end` (from the XML; for PDF rows, the last day of the `tax_prd` month and the day after the same date a year earlier); `exp_personnel_tot` (Part IX lines 5–10, or EZ line 12); and quick checks `chk_contrib_diff`, `chk_exp_diff`, `chk_flag`. These are computed the same way for XML and PDF rows.
 9. **Program information:** joins program names, counties and tier from `casa_990_programs.csv`.
+10. **CASA-only coding:** reads `raw_data/CASA/990_forms/casa_990_casa_line_coding.csv` (if it is missing, nothing is coded) and joins it by `ein`, `tax_prd` and `casa_line`. `casa_line_only` = the hand code; tier A rows with a CASA line get 1 automatically; rows with no CASA line stay blank. `casa_exp_only` = `casa_exp` when `casa_line_only = 1`, otherwise blank. Writes `casa_990_casa_line_review.csv` listing every tier B–D CASA line with its description and `status` (`coded` / `UNCODED`), and prints how many are uncoded. The coding file must match the line exactly: if a line's letter changes in a re-parse, the old code no longer applies and the row shows as `UNCODED`.
 
-**Writes** to `clean_data/CASA/990_forms/`: `casa_990_panel.csv`, `casa_990_codebook.csv`, `casa_990_other_expenses.csv` and `casa_990_program_services.csv`. Also writes `raw_data/CASA/990_forms/casa_990_pdf_entry_template.csv`. Output is CSV only, with `NA` written as blank.
+**Writes** to `clean_data/CASA/990_forms/`: `casa_990_panel.csv`, `casa_990_codebook.csv`, `casa_990_other_expenses.csv`, `casa_990_program_services.csv` and `casa_990_casa_line_review.csv`. Also writes `raw_data/CASA/990_forms/casa_990_pdf_entry_template.csv`. Output is CSV only, with `NA` written as blank.
 
-**Prints:** how many returns still have no data, how many hand-entered rows were added, and a count by source, tier, form, `parse_fail` and `chk_flag`.
+**Prints:** how many returns still have no data, how many hand-entered rows were added, how many CASA lines are uncoded, and a count by source, tier, form, `parse_fail` and `chk_flag`.
 
 ---
 
@@ -174,7 +180,8 @@ The R version of `SetGlobals.do`. It sets folder paths by computer and user, and
 | `exp_p1_vs_ix` | error | Part I line 18 = IX line 25 |
 | `prog_vs_ix` | error | Part III total = IX 25 column B |
 | `bal_boy`, `bal_eoy` | error | Assets − liabilities = net assets |
-| `missing_core` | error | Total revenue, total expenses or ending net assets blank |
+| `missing_core` | error | Total revenue, total expenses, ending net assets or tax period dates blank |
+| `casa_uncoded` | error | Tier B–D return has a `casa_line` but no `casa_line_only` code |
 | `parse_fail` | error | XML could not be read |
 | `missing_return` | error | Listed on ProPublica but not in the panel |
 | `py_rev`, `py_exp` | warn | This return's prior-year column = last year's return |
@@ -194,7 +201,19 @@ The cross-year checks only compare returns exactly 12 months apart. They also te
 
 ---
 
-## 7. Troubleshooting
+## 7. `casa_990_04_import.do` (Stata)
+
+**Purpose:** bring the panel into Stata with labels and correct types.
+
+1. Starts with `clear all`, `macro drop _all`, `runglobals`.
+2. Imports `casa_990_panel.csv` with every column as text (`stringcols(_all)`), so EINs keep leading zeros and `object_id` keeps all 18 digits, then `destring`s everything except the text variables.
+3. Converts `tax_prd_begin` and `tax_prd_end` to Stata dates and asserts they are never blank and that `tax_prd_end` falls in the `tax_prd` month. Asserts `isid ein tax_prd` and `isid ein fy_start`.
+4. Labels every variable (from the codebook), adds yes/no value labels (including `casa_line_only`), and adds `tier_num`, `pdf_manual` and `form_ez`. Dollar amounts get the `%15.0fc` format.
+5. Saves `clean_data/CASA/990_forms/casa_990_panel.dta`.
+
+---
+
+## 8. Troubleshooting
 
 | Problem | Fix |
 |---|---|
@@ -205,3 +224,5 @@ The cross-year checks only compare returns exactly 12 months apart. They also te
 | Return listed but `has_xml = FALSE` | Not yet in the GivingTuesday archive (or paper-filed). Save the XML by hand, or transcribe the PDF |
 | `missing_return` errors in script 03 | Rerun 01 then 02. If it persists, the return needs a hand-saved XML or PDF entry |
 | `Can't combine ... <logical> and <character>` in script 03 | Fixed 2 Nov 2026 (`bind_fixed()`); update to the current script |
+| Every row in `casa_990_casa_line_review.csv` says `UNCODED` | Script 02 did not find the coding file. It must be saved as exactly `raw_data/CASA/990_forms/casa_990_casa_line_coding.csv` (check that the browser did not rename it, e.g. `… (1).csv`). Rerun 02 |
+| A few rows say `UNCODED` / `casa_uncoded` errors in 03 | New CASA lines (a new year, or a changed line letter). Read their descriptions in the review file, add rows to the coding file, rerun 02 and 03 |
