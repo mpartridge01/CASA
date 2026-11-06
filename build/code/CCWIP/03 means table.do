@@ -20,7 +20,7 @@ runglobals
 *******************************************************************************
 
 
-use "$onedrive\data\clean_data\funding_ccwip.dta", clear
+use "$onedrive/data/clean_data/funding_ccwip.dta", clear
 
 foreach fund in jc_base jc_incentive_volunteer_retention jc_incentive_dependency_served jc_augmentation_500k jc_growth_incentive jc_growth_incentive_a jc_growth_incentive_b {
 	replace `fund' = 0 if mi(`fund') 
