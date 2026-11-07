@@ -64,7 +64,7 @@ merge m:1 program_name year using `funding_program'
 ** Funding data missing. 
 drop if inlist(year, "2011", "2012", "2013", "2014")
 
-save "$onedrive/data/clean_data"
+save "$onedrive/data/clean_data/funding_ccwip.dta"
 
 
 
