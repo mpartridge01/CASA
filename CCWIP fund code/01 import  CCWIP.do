@@ -26,7 +26,7 @@ use `case_closures_data', clear
 			
 	}
 	tostring year , replace 
-	
+	stopp
 tempfile scrape
 save `scrape'
 
