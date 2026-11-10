@@ -1,3 +1,9 @@
+# Clear environment
+rm(list = ls())
+
+# Find and run build/code/SetGlobals.R (here() locates the CASA repo root)
+source(here::here("build", "code", "SetGlobals.R"))
+
 #==============================================================================#
 #                           casa_990_03_check.R                                #
 #==============================================================================#
@@ -25,7 +31,7 @@
 #      exp_p1_vs_ix    Part I line 18 = IX line 25
 #      prog_vs_ix      Part III total program expenses = IX 25 col B
 #      bal_boy/bal_eoy assets - liabilities = net assets
-#      missing_core    total revenue, total expenses, or EOY net assets blank
+#      missing_core    total revenue, total expenses, EOY net assets, or tax period dates blank
 #    Across years, same EIN, consecutive returns (severity "warn"; a
 #    restatement or a change in fiscal year can cause these legitimately):
 #      py_rev / py_exp prior-year column on this return = last year's return
@@ -38,22 +44,15 @@
 #      short_year      tax period not 12 months after the previous one (warn)
 #      missing_return  return listed on ProPublica but no data (error)
 #      pdf_not_found   PDF row whose PDF file is not in its FY folder (warn)
+#      casa_uncoded    tier B-D return whose CASA line has no casa_line_only coding (error)
 # 5. Packages (tidyverse) are loaded in SetGlobals.R.
-
-#==============================================================================#
-
-# Clear environment
-rm(list = ls())
-
-# Find and run build/code/SetGlobals.R (here() locates the CASA repo root)
-source(here::here("build", "code", "SetGlobals.R"))
 
 #==============================================================================#
 
 indir <- file.path(rawdata, "CASA", "990_forms")
 tol   <- 1 # dollars (rounding)
 
-panel    <- read_csv(file.path(cleandata, "/CASA/990_forms/casa_990_panel.csv"),
+panel    <- read_csv(file.path(cleandata, "CASA", "990_forms", "casa_990_panel.csv"),
                      col_types = cols(ein = "c", tax_prd = "c", object_id = "c", form = "c",
                                       fy = "c", source = "c", casa_line = "c", notes = "c",
                                       .default = col_guess()),
@@ -107,7 +106,8 @@ within <- panel |>
     prog_vs_ix   = ifelse(form == "990", prog_exp_total - exp_total_prog, NA),
     bal_boy = assets_boy - liab_boy - net_assets_boy,
     bal_eoy = assets_eoy - liab_eoy - net_assets_eoy,
-    missing_core = ifelse(is.na(rev_total) | is.na(exp_total_tot) | is.na(net_assets_eoy), 1, 0)
+    missing_core = ifelse(is.na(rev_total) | is.na(exp_total_tot) | is.na(net_assets_eoy) |
+                          is.na(tax_prd_begin) | is.na(tax_prd_end), 1, 0)
   )
 
 within_checks <- c("contrib_sum", "rev_sum", "rev_p1_vs_viii", "events_net", "exp_sum",
@@ -118,7 +118,7 @@ issues_within <- within |>
   pivot_longer(c(all_of(within_checks), missing_core), names_to = "check", values_to = "diff") |>
   filter((check == "missing_core" & diff == 1) | (check != "missing_core" & abs(diff) > tol)) |>
   mutate(severity = "error",
-         detail = ifelse(check == "missing_core", "total revenue, total expenses or EOY net assets is blank",
+         detail = ifelse(check == "missing_core", "total revenue, total expenses, EOY net assets or tax period dates blank",
                          paste0("off by ", format(diff, big.mark = ","))))
 
 #==============================================================================#
@@ -190,6 +190,12 @@ issues_struct <- bind_fixed(
               detail = ifelse(has_xml == "TRUE",
                               "index has an XML but it was not parsed (rerun 01 then 02)",
                               paste0("no XML; enter from PDF: ", coalesce(pdf_href, "")))),
+  # Tier B-D CASA lines not yet hand-coded as CASA-only or combined
+  panel |>
+    left_join(programs |> distinct(ein, .tier = tier), by = "ein") |>
+    filter(!is.na(casa_line), .tier != "A", is.na(casa_line_only)) |>
+    transmute(ein, fy, tax_prd, form, source, check = "casa_uncoded", severity = "error",
+              detail = paste0("line ", casa_line, " names CASA but is not coded; add to casa_990_casa_line_coding.csv")),
   # PDF rows whose PDF isn't saved in the FY folder
   panel |>
     filter(source == "pdf_manual") |>
@@ -209,7 +215,7 @@ report <- bind_fixed(issues_within, issues_across, issues_struct) |>
   select(severity, check, programs, ein, fy, tax_prd, form, source, diff, detail) |>
   arrange(severity, programs, tax_prd, check)
 
-write_csv(report, file.path(cleandata, "/CASA/990_forms/casa_990_check_report.csv"), na = "")
+write_csv(report, file.path(cleandata, "CASA", "990_forms", "casa_990_check_report.csv"), na = "")
 
 #==============================================================================#
 #                         Coverage: program x FY                               #
@@ -247,7 +253,7 @@ coverage_wide <- coverage |>
   pivot_wider(names_from = fy, values_from = status) |>
   arrange(counties)
 
-write_csv(coverage_wide, file.path(cleandata, "/CASA/990_forms/casa_990_coverage.csv"), na = "")
+write_csv(coverage_wide, file.path(cleandata, "CASA", "990_forms", "casa_990_coverage.csv"), na = "")
 
 #==============================================================================#
 #                                Summary                                       #

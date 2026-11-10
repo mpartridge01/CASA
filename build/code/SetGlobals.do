@@ -30,8 +30,8 @@ if "`c(os)'" == "MacOSX" & "`c(username)'" == "mpart" {
 }
 * Emily's PC
 else if "`c(os)'" == "windows" & "`c(username)'" == "emi" {
-	global github "C:\Users\emi\Documents\GitHub\CASA"
-	global onedrive "C:\Users\emi\OneDrive - UC San Diego\Research\CASA\data"
+	global github "C:/Users/emi/Documents/GitHub/CASA"
+	global onedrive "C:/Users\emi/OneDrive - UC San Diego/Research/CASA/data"
 }
 
 * Template for additional users (fill in username from c(username) and paths)

@@ -4,43 +4,23 @@
 ** Author: Emily Marsh
 ********************************************************************************
 
-global onedrive "C:\Users\emi\OneDrive - UC San Diego\Research\CASA\" 
+********************************************************************************
+*                              Run globals script                              *
+********************************************************************************
 
+* Clear environment
+clear all
+macro drop _all
+
+* Find and run build/code/SetGlobals.do (runglobals.ado in PERSONAL ado folder)
+runglobals
+
+********************************************************************************
+** Import data 
 *******************************************************************************
-** Table of means 
-*******************************************************************************
 
 
-use "$onedrive\data\clean_data\funding_ccwip.dta", clear
-
-foreach fund in jc_base jc_incentive_volunteer_retention jc_incentive_dependency_served jc_augmentation_500k jc_growth_incentive jc_growth_incentive_a jc_growth_incentive_b {
-	replace `fund' = 0 if mi(`fund') 
-}
-
-** Want supplement to be 0 in counties that dont have a casa program in 2022, 2023, 2024 but missing in all counties in other years. 
-replace ca_casa_supplemental = 0 if mi(ca_casa_supplemental) & inlist(year, "2022", "2023", "2024")
-
-****** Create funding per child in care ********
-destring year, replace 
-
-foreach var in in_care stability reentry2  {
-	replace `var' = "" if `var' == "M"
-	destring `var', replace 
-}
-
-
-** All baseline funding (outside of supplement) 
-egen baseline_sum = rowtotal(jc_base jc_incentive_volunteer_retention jc_incentive_dependency_served jc_augmentation_500k jc_growth_incentive jc_growth_incentive_a jc_growth_incentive_b) 
-
-** Total funding (baseline + supplement)
-egen total_fund = rowtotal(baseline_sum ca_casa_supplemental) 
-
-
-** Create baseline funding/child, total funding/child, supplement/child (where child is a child in foster care)
-** The in-care variable is a point in time variable (instead of calculated over the course of the year) but I set the point as July (which corresponds to the beginning of the CA fiscal year). One thing to look into is when the actual disbursement happened. 
-gen baseline_pc = baseline_sum/in_care 
-gen tot_fund_pc = total_fund/in_care
-gen supp_pc = ca_casa_supplemental/in_care 
+use "$onedrive/data/clean_data/funding_ccwip.dta", clear
 
 
 
