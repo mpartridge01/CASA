@@ -4,8 +4,13 @@
 ** Date: November 9, 2026
 *********************************************************************************
 
-** Need to figure out the runglobals ado in GitHub to do the globals through that. 
-global onedrive "C:\Users\emi\OneDrive - UC San Diego\Research\CASA" 
+* Clear environment
+clear all
+macro drop _all
+
+* Find and run build/code/SetGlobals.do (runglobals.ado in PERSONAL ado folder)
+runglobals
+
 
 
 import excel using "$onedrive\data\raw_data\CASA\E-4_2010-2020_CountyPopulation.xlsx", cellrange(A2) sheet("Table 1 County State") firstrow clear
