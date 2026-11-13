@@ -37,8 +37,8 @@ local ccwip "entries in_care permanence_12m place_stability recur_malt reentry2 
 
 
 foreach v in entries in_care permanence_12m place_stability recur_malt reentry2 stability {
-	replace `v' = "" if `v' == "M"
-	 destring `v', replace 
+	capture replace `v' = "" if `v' == "M"
+	capture destring `v', replace 
 }
 
 
@@ -54,6 +54,10 @@ foreach v in entries in_care permanence_12m place_stability recur_malt reentry2 
 capture drop baseline_sum total_fund
 egen baseline_sum = rowtotal(jc_base jc_incentive_volunteer_retention jc_incentive_dependency_served jc_augmentation_500k jc_growth_incentive jc_growth_incentive_a jc_growth_incentive_b)
 egen total_fund = rowtotal(baseline_sum ca_casa_supplemental)
+
+
+** 2020 population of each county, carried to every year (the Judicial Council's small/large rule uses 2020 population). It's summed over the counties in the program below, so pop2020 = the program's 2020 population given the counties it has that year. 
+bysort county: egen double pop2020 = max(cond(year == 2020, Pop, .))
 
 
 ** Quick check that the funding really is the same on every county row of a program 
@@ -105,7 +109,7 @@ forvalues j = 1/`nr' {
 
 
 ** Counts: sum over the counties in the program. The "missing" option keeps it missing (instead of 0) if every county is missing that year. 
-foreach v of varlist Pop entries in_care stability case_closures_* entry_cohort_* exits_* population_* recurrence_* reentry_no_reentry_within_12_mon reentry_reentered_in_less_than_1 reentry_total {
+foreach v of varlist Pop pop2020 entries in_care stability case_closures_* entry_cohort_* exits_* population_* recurrence_* reentry_no_reentry_within_12_mon reentry_reentered_in_less_than_1 reentry_total {
 	bysort program_name year: egen double _t = total(`v'), missing
 	replace `v' = _t
 	drop _t
@@ -134,8 +138,80 @@ gen baseline_pc = baseline_sum / in_care
 gen tot_fund_pc = total_fund / in_care
 gen supp_pc     = ca_casa_supplemental / in_care
 
+label var Pop     "Population of the program's counties that year (DOF E-4)"
+label var pop2020 "2020 population of the program's counties (DOF E-4, Jan 1 2020)"
+
+
+********************************************************************************
+** 				 Judicial Council funding rule indicators                     **
+********************************************************************************
+
+** Program indicator 
+gen byte has_program = !strmatch(program_name, "* NA")
+label var has_program "Unit is a state-funded CASA program"
+
+** Number of Judicial Council grant lines in the unit. Butte/Glenn and Shasta/Tehama are two Judicial Council grant lines (each a tier 2 two-county program) but one unit here, because the CA CASA supplemental funds the four counties as one program. Every other unit is one line. 
+gen byte jc_n_lines = cond(program_name == "CASA of Butte, Glenn, Shasta, and Tehama Counties", 2, 1) if has_program
+label var jc_n_lines "No. of Judicial Council grant lines in this unit"
+
+** Multi-county program: counties funded together as one program that year (Judicial Council base x 1.5) 
+gen byte jc_multi = has_program & n_counties >= 2
+label var jc_multi "Multi-county program (Judicial Council base x 1.5)"
+
+** Judicial Council population tier as set in 2013 (Aug 23, 2013 report, Attachment B): programs ranked by county population (combined for multi-county programs). Programs that later added a county kept their tier. 
+gen byte jc_tier_2013 = .
+replace jc_tier_2013 = 1 if inlist(program_name, "CASA of Del Norte", "CASA of Humboldt", "CASA of Lassen Family Services", "CASA of Mariposa County", "Modoc CASA", "Child Advocates of Nevada County")
+replace jc_tier_2013 = 1 if inlist(program_name, "Plumas CASA", "CASA of San Benito County", "CASA of Siskiyou County", "CASA of Amador and Calaveras Counties", "CASA of the Eastern Sierra")
+replace jc_tier_2013 = 2 if inlist(program_name, "Child Advocates of El Dorado County", "CASA of Imperial County", "CASA of Kings County", "Marin CASA", "CASA of Merced County", "Napa CASA")
+replace jc_tier_2013 = 2 if inlist(program_name, "CASA of San Luis Obispo County", "CASA of Santa Cruz County", "Yolo County CASA", "CASA of Butte, Glenn, Shasta, and Tehama Counties", "CASA of Mendocino and Lake Counties")
+replace jc_tier_2013 = 3 if inlist(program_name, "CASA of Monterey County", "Child Advocates of Placer County", "San Francisco CASA", "CASA of San Joaquin County", "CASA of San Mateo County", "CASA of Santa Barbara County")
+replace jc_tier_2013 = 3 if inlist(program_name, "CASA of Solano County", "CASA of Sonoma County", "CASA of Stanislaus County", "CASA of Tulare County", "CASA of Ventura County")
+replace jc_tier_2013 = 4 if inlist(program_name, "Alameda County CASA", "CASA of Contra Costa County", "CASA of Kern County", "CASA of Los Angeles", "CASA of Orange County", "Voices for Children Riverside")
+replace jc_tier_2013 = 4 if inlist(program_name, "CASA Sacramento", "CASA of San Bernardino County", "Voices for Children San Diego", "Child Advocates of Silicon Valley", "CASA of Fresno and Madera Counties")
+label var jc_tier_2013 "Judicial Council population tier as set in 2013 (1-4)"
+assert !missing(jc_tier_2013) if has_program
+assert  missing(jc_tier_2013) if !has_program
+
+** Tier the program was actually funded at that year, read off its base: base per grant line = tier amount (26,000 / 34,000 / 42,000 / 50,000) x 1.15 from FY 2018-19 x 1.5 if multi-county. 
+gen double _b13 = jc_base / jc_n_lines / cond(year >= 2018, 1.15, 1) / cond(jc_multi, 1.5, 1)
+gen byte jc_tier = .
+replace jc_tier = 1 if abs(_b13 - 26000) < 1
+replace jc_tier = 2 if abs(_b13 - 34000) < 1
+replace jc_tier = 3 if abs(_b13 - 42000) < 1
+replace jc_tier = 4 if abs(_b13 - 50000) < 1
+drop _b13
+label var jc_tier "Judicial Council population tier the program was funded at that year (1-4)"
+** Every program's base fits one tier exactly 
+list program_name year jc_base jc_multi jc_n_lines if has_program & missing(jc_tier), noobs
+assert !missing(jc_tier) if has_program
+
+** The funded tier matches 2013 in every year except two (from the funding tables): San Luis Obispo in FY 2015-16 (funded at tier 3) and Napa in FY 2026-27 (funded at tier 1). 
+list program_name year jc_tier_2013 jc_tier jc_base if has_program & jc_tier != jc_tier_2013, noobs
+assert jc_tier == jc_tier_2013 if has_program & !(program_name == "CASA of San Luis Obispo County" & year == 2015) & !(program_name == "Napa CASA" & year == 2026)
+
+** Tier dummies (tier funded at that year) 
+forvalues t = 1/4 {
+	gen byte jc_tier`t' = (jc_tier == `t') if has_program
+	label var jc_tier`t' "Funded at Judicial Council tier `t'"
+}
+
+** Small/large program (rule written down in 2024: 2020 population under 300,000 = small; combined population for multi-county programs). 
+** Butte/Glenn/Shasta/Tehama: the Judicial Council classifies each of its two grant lines on its own (about 240,000 and 250,000 people), so both are small, even though the four counties together are over 300,000. 
+gen byte jc_small = (pop2020 < 300000) if has_program
+replace jc_small = 1 if program_name == "CASA of Butte, Glenn, Shasta, and Tehama Counties"
+label var jc_small "Small program (2020 population < 300,000, per Judicial Council grant line)"
+
+** Check: small/large matches the Judicial Council's FY 2024-25 list of small programs 
+gen byte _jc_small_list = inlist(program_name, "CASA of Amador and Calaveras Counties", "CASA of Butte, Glenn, Shasta, and Tehama Counties", "CASA of Del Norte", "Child Advocates of El Dorado County", "CASA of Humboldt", "CASA of Imperial County", "CASA of the Eastern Sierra", "CASA of Kings County") ///
+	| inlist(program_name, "CASA of Lassen Family Services", "Marin CASA", "CASA of Mariposa County", "CASA of Mendocino and Lake Counties", "CASA of Merced County", "Modoc CASA", "Napa CASA", "Child Advocates of Nevada County") ///
+	| inlist(program_name, "Plumas CASA", "CASA of San Benito County", "CASA of San Luis Obispo County", "CASA of Santa Cruz County", "CASA of Siskiyou County", "Yolo County CASA")
+list program_name year pop2020 jc_small if has_program & inlist(year, 2024, 2025) & jc_small != _jc_small_list, noobs
+assert jc_small == _jc_small_list if has_program & inlist(year, 2024, 2025)
+drop _jc_small_list
+
+
 isid program_name year
-* Expect 49 units in every year (44 programs + 5 counties with no program)
-tab year
+* Expect 44 programs every year, plus counties without a program: 52 units in 2015-2017 (Alpine, Calaveras, Colusa, Sierra, Sutter, Trinity, Tuolumne, Yuba), 51 in 2018-2022 (Calaveras joins Amador), 50 in 2023-2025 (Yuba joins Placer), 49 in 2026 (Sutter joins Placer)
+tab year has_program
 
 save "$onedrive/data/clean_data/program_pop_fund_ccwip.dta", replace 

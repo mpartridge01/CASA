@@ -30,13 +30,13 @@ runglobals
 
 
 *==============================================================================*
-*               1. County -> funding unit (program_name) crosswalk             *
+*          1. County x year -> funding unit (program_name) crosswalk           *
 *==============================================================================*
 
-use county program_name using "$onedrive/data/clean_data/funding_ccwip.dta", clear
+* By year, because counties join programs in the year the state starts funding them together (Calaveras 2018, Yuba 2023, Sutter 2026)
+use county year program_name using "$onedrive/data/clean_data/funding_ccwip.dta", clear
 drop if program_name == ""
-duplicates drop
-isid county
+isid county year
 tempfile xwalk
 save `xwalk'
 
@@ -55,13 +55,15 @@ drop if missing(cty)
 gen county = strtrim(cty)
 drop row cty cty_n
 
-* Attach the funding unit for each county
-merge m:1 county using `xwalk'
-assert _merge != 1        // every 990 county belongs to a funding unit
-drop if _merge == 2       // counties with no CASA program
+rename fy_start year
+
+* Attach the program that funds each county in that year
+merge m:1 county year using `xwalk'
+* _m == 1: county-years the state doesn't fund (e.g. Sutter before 2026, Yuba before 2023, served by Child Advocates of Placer County) and FY 2014-15 (before the funding data). Not part of any program.
+tab county if _merge == 1 & year >= 2015
+drop if _merge != 3       // also drops counties with no CASA program
 drop _merge
 
-rename fy_start year
 drop programs counties fy_end county
 
 * Counties of the same unit are now identical rows: keep one per unit-year.
@@ -164,9 +166,9 @@ label values has_990 yesno
 label variable has_990 "990 data for this funding unit-year"
 drop _merge
 
-* Expect 990 data for: 42 units in 2015, 43 in 2016, 44 in 2017-2023,
-* 42 in 2024, 3 in 2025, 0 in 2026. Counties with no CASA program never match.
-tab year has_990
+* Expect 990 data for: 42 programs in 2015 (no Marin, Amador), 43 in 2016 (no Marin), 44 in 2017-2023,
+* 42 in 2024 (no Del Norte, Mariposa), 3 in 2025, 0 in 2026. Counties with no CASA program never match.
+tab year has_990 if has_program
 
 * Check the split: Voices for Children's two rows add back to the 990 total
 list program_name year share_990 exp_total org_exp_total if split_990 == 1, sepby(year) noobs

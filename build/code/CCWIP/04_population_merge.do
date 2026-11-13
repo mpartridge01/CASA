@@ -13,7 +13,7 @@ runglobals
 
 
 
-import excel using "$onedrive\data\raw_data\CASA\E-4_2010-2020_CountyPopulation.xlsx", cellrange(A2) sheet("Table 1 County State") firstrow clear
+import excel using "$onedrive/data/raw_data/CASA/E-4_2010-2020_CountyPopulation.xlsx", cellrange(A2) sheet("Table 1 County State") firstrow clear
 
 * Var names are getting messed up, but I only need 2018-2020 from this data. 
 drop B C D E F M Column1 Column2 
@@ -32,7 +32,7 @@ reshape long Pop, i(county) j(year)
 tempfile pop1820
 save `pop1820'
 
-import excel using "$onedrive\data\raw_data\CASA\E-4_2021-2026_CountyPopulation.xlsx", cellrange(A3) sheet("Table 1 County State") firstrow clear
+import excel using "$onedrive/data/raw_data/CASA/E-4_2021-2026_CountyPopulation.xlsx", cellrange(A3) sheet("Table 1 County State") firstrow clear
 
 ren StateCounty county
 
@@ -56,11 +56,11 @@ drop if inlist(county, "California", "Demographic Research Unit", "Department of
 drop if mi(Pop)
 
 sort county year
-tostring year, replace 
+** year stays numeric: 02 now saves funding_ccwip.dta with a numeric year (a string year here would not merge) 
 
 replace county = strtrim(county)
 
-merge 1:m county year using "$onedrive\data\clean_data\funding_ccwip.dta"
+merge 1:m county year using "$onedrive/data/clean_data/funding_ccwip.dta"
 	// _m == 3 
 	
 drop _m 

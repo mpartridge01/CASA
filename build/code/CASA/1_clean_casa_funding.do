@@ -24,7 +24,7 @@ runglobals
 *                               Import data                                    *
 *==============================================================================*
 
-import delimited "$rawdata/CASA/casa_funding_county_fy2015_2026.csv", clear
+import delimited "$rawdata/CASA/casa_funding_program_fy2015_2026.csv", clear
 
 *==============================================================================*
 *                          Total state funding                                 *
