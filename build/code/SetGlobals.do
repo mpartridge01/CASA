@@ -29,9 +29,9 @@ if "`c(os)'" == "MacOSX" & "`c(username)'" == "mpart" {
 	global onedrive "/Users/mpart/Library/CloudStorage/OneDrive-UCSanDiego/Marsh, Emily's files - CASA"
 }
 * Emily's PC
-else if "`c(os)'" == "windows" & "`c(username)'" == "emi" {
+else if "`c(os)'" == "Windows" & "`c(username)'" == "emi" {
 	global github "C:/Users/emi/Documents/GitHub/CASA"
-	global onedrive "C:/Users\emi/OneDrive - UC San Diego/Research/CASA/data"
+	global onedrive "C:/Users/emi/OneDrive - UC San Diego/Research/CASA/"
 }
 
 * Template for additional users (fill in username from c(username) and paths)

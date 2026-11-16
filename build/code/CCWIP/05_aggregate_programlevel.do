@@ -132,7 +132,6 @@ capture drop baseline_pc tot_fund_pc supp_pc
 ds program_name year, not
 collapse (firstnm) `r(varlist)', by(program_name year)
 
-
 * Per-child funding, recomputed at the program level
 gen baseline_pc = baseline_sum / in_care
 gen tot_fund_pc = total_fund / in_care

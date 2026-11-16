@@ -3,6 +3,7 @@
 ** Author: Emily
 ** Date: November 9, 2026
 *********************************************************************************
+global onedrive "C:\Users\emi\OneDrive - UC San Diego\Research\CASA" 
 
 use  "$onedrive/data/clean_data/program_pop_fund_ccwip.dta", clear 
 
