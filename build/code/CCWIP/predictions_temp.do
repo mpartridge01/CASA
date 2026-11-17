@@ -105,6 +105,7 @@ gen int fold = mod(prog_id, 11) + 1
 gen double ln_supp = ln(ca_casa_supplemental) if ca_casa_supplemental > 0
 gen double supp_hat = 0          // predicted supplemental ($), 0 before 2022
 
+**# Bookmark #1
 foreach t in 2022 2023 2024 {
 	gen double _xb = .
 	forvalues f = 1/11 {

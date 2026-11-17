@@ -52,7 +52,7 @@ foreach v in `x3' {
     bysort prog_id: egen double b_`v' = max(cond(year == `base', `v', .))
 }
 
-bysort prog_id: egen double F0_act = max(cond(year == `base', tot_fund, .))
+bysort prog_id: egen  F0_act = max(cond(year == `base', total_fund, .))
 
 **********************************
 ** Old Formula 
@@ -86,7 +86,8 @@ forvalues f = 1/5 {
 // Pooled across supplemental years
 
 gen xb1_X1 = . 
-gen xb1_X0 = . 
+gen xb1_X0 = .
+
 forvalues f = 1/5 {
 	
 elasticnet linear `y' `x2' if year >= 2022 & year <=2024 & fold != `f', alpha(0(0.1)1)  selection(cv, folds(3))
@@ -113,10 +114,10 @@ elasticnet linear `y' `x2' if year >= 2022 & year <=2024 & fold != `f', alpha(0(
 }
 
 ** Back to dollars (smearing so predictions average to actual dollars)
-	gen F1_X0 = . 
+	gen F1_X0_pool = . 
 	gen double _s = exp(`y' - xb1_X1) if year >= 2022 & year <=2024
 	quietly summarize _s
-	replace F1_X0 = exp(xb1_X0) * r(mean) if year >= 2022 & year <=2024
+	replace F1_X0_pool = exp(xb1_X0) * r(mean) if year >= 2022 & year <=2024
 	drop _s
 	
 	
@@ -148,7 +149,8 @@ foreach t in 2022 2023 2024 {
 }
 }
 
-** Back to dollars (smearing so predictions average to actual dollars) 
+** Back to dollars (smearing so predictions average to actual dollars)
+	gen F1_X0 = .  
 	foreach t in 2022 2023 2024 {
 	gen double _s = exp(`y' - xb1_X1) if year == `t'
 	quietly summarize _s
@@ -166,10 +168,11 @@ foreach t in 2022 2023 2024 {
 gen D_fund = (total_fund - F0_act)
 
 ** Instrument: change in funding due to the change in the formula. ie: F_1(X_0) - F_0(X_0)
+gen Z_pool = (F1_X0_pool - F0_X0)
 gen Z = (F1_X0 - F0_X0)
 
 foreach t in 2022 2023 2024 {
 	gen Z_`t' = Z * (year == `t')
 }
-
+drop Z 
 save "$onedrive/data/clean_data/instr_reg.dta", replace 
