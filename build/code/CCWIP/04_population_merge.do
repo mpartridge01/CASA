@@ -114,6 +114,9 @@ merge 1:m program_name year using "`popfile'"
 
 ren children_served child_srv_casa
 
+** These few counties don't have a CASA program.
+replace child_srv_casa = 0 if mi(child_srv_casa) & mi(program_name)
+
 save "$onedrive/data/clean_data/pop_fund_ccwip.dta", replace
 
 
