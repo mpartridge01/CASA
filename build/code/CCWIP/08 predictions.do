@@ -4,8 +4,8 @@
 ** Author: Emily
 ** Date: November 16, 2026
 *********************************************************************************
-set trace on
-set tracedepth 2
+*set trace on
+*set tracedepth 2
 * Clear environment
 clear all
 macro drop _all
@@ -76,7 +76,7 @@ forvalues f = 1/5 {
 	gen double _s = exp(`y' - xb0) if year < 2022 & year > 2017
 	quietly summarize _s
 	replace _F0 = exp(xb0) * r(mean) if year < 2022 & year > 2017
-	bys prog_id : egen F0_X0 = max(_F0)
+	bys prog_id : egen double F0_X0 = max(cond(year == `base', _F0, .))
 	drop xb0 _s
 	*/
 ****************************************
@@ -152,7 +152,7 @@ foreach t in 2022 2023 2024 {
 ** Back to dollars (smearing so predictions average to actual dollars)
 	gen F1_X0 = .  
 	foreach t in 2022 2023 2024 {
-	gen double _s = exp(`y' - xb1_X1) if year == `t'
+	gen double F_s = exp(`y' - xb1_X1) if year == `t'
 	quietly summarize _s
 	replace F1_X0 = exp(xb1_X0) * r(mean) if year == `t'
 	drop _s
@@ -168,11 +168,16 @@ foreach t in 2022 2023 2024 {
 gen D_fund = (total_fund - F0_act)
 
 ** Instrument: change in funding due to the change in the formula. ie: F_1(X_0) - F_0(X_0)
-gen Z_pool = (F1_X0_pool - F0_X0)
-gen Z = (F1_X0 - F0_X0)
+gen double Z_pool = (F1_X0_pool - F0_X0)
+gen double Z_yr   = (F1_X0      - F0_X0)
+
+** In 2021 there's no formula change, so the instrument is 0 (needed for last year's instrument in 09)
+replace Z_pool = 0 if year == `base'
+replace Z_yr   = 0 if year == `base'
 
 foreach t in 2022 2023 2024 {
-	gen Z_`t' = Z * (year == `t')
+	gen double Z_`t'      = Z_yr   * (year == `t')
+	gen double Z_pool_`t' = Z_pool * (year == `t')
 }
-drop Z 
+
 save "$onedrive/data/clean_data/instr_reg.dta", replace 
