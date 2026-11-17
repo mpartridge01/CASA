@@ -1,9 +1,11 @@
 *********************************************************************************
-** Purpose: LASSO / Ridge Regression to predit funding.
+** Purpose: LASSO / Ridge Regression to predit funding
+** 			Creates instrument, z
 ** Author: Emily
 ** Date: November 16, 2026
 *********************************************************************************
-
+set trace on
+set tracedepth 2
 * Clear environment
 clear all
 macro drop _all
@@ -17,8 +19,13 @@ use "$onedrive/data/clean_data/program_pop_fund_ccwip_990.dta", clear
 set seed 12345
 ** Because our prediction variables are likely to be correlated (population, number of children in care, staff expenditure, etc) I am going to start with ElasticNet.
 
-
 egen prog_id = group(program_name) 
+keep if has_program
+
+gen ln_fund = ln(total_fund)
+gen ln_pop = ln(Pop)
+
+replace tier = 0 if mi(tier)
 
 ** Creating lags for the 990 variables (employees/fundraising/expenditures/etc are factored in to the funding based on the prior year) 
 tsset prog_id year
@@ -26,124 +33,143 @@ foreach v in emp_count rev_fundraising rev_invest exp_salaries exp_grants exp_pr
 	gen `v'_lag1 = L1.`v'
 }
 	
-
-gen ln_fund = ln(total_fund)
-gen ln_pop = ln(Pop)
-** Fitting our model to predict total funding
+*******************************************************************************
+// 			LOCALS 
+*******************************************************************************
+local base 2021
 local y "ln_fund"
+local x1 "ln_pop in_care entries place_stability i.tier case_closures_total child_srv_casa recurrence_assessment_only reentry_total recurrence_no_recurrence recurrence_total n_counties emp_count rev_invest exp_salaries i.casa_type *_lag1 jc_tier_2013"
 
-** Potential predictors -- I think some of the problem is coming from missings. If any variable is missing, the whole observation is dropped, which is significantly eating into the observation count. 
-local x "Pop entries in_care place_stability entry_rates_11_15 entry_rates_16_17 entry_rates_1_2 entry_rates_3_5 entry_rates_6_10 entry_rates_under_1 population_11_15 population_16_17 population_18_20 population_1_2 population_3_5 population_6_10 population_under_1 child_srv_casa n_counties *_lag1"
+local x2 "i.tier child_srv_casa children_in_foster_care ln_pop entries in_care case_closures_total exits_total in_care_rates_total recurrence_no_recurrence recurrence_total pop2020 n_counties emp_count rev_fundraising rev_invest exp_salaries exp_mgmt i.casa_type *_lag1 jc_tier_2013"
 
-/*
-* Folds by program: every observation of a program goes in the same fold
-** If I include i.prog_id, the R2 in sample gets larger (.76) but the out-of-sample R2 gets smaller (.37) 
-elasticnet linear `y' `x', alpha(0(0.1)1) 
-	lassocoef, display(coef, penalized)       // shrunken coefficients from the selected model
-	lassocoef, display(coef, standardized)    // same, on a standardized scale
-	lassocoef, display(coef, postselection)   // OLS refit on the selected variables
-	lassogof        						  // goodness of fit (MSE, R²) for the selected model
-	
-*/	
-** Now, running the prediction for each year separately. 
+local x3 "tier child_srv_casa children_in_foster_care ln_pop entries in_care case_closures_total exits_total in_care_rates_total recurrence_no_recurrence recurrence_total pop2020 n_counties emp_count rev_fundraising rev_invest exp_salaries exp_mgmt casa_type jc_tier_2013 emp_count_lag1 rev_fundraising_lag1 rev_invest_lag1 exp_salaries_lag1 exp_grants_lag1 exp_prog_lag1 exp_mgmt_lag1 casa_spend_lag1"
+
+********************************************************************************
+// 			PREDICTIONS
+********************************************************************************
+
+foreach v in `x3' {
+    bysort prog_id: egen double b_`v' = max(cond(year == `base', `v', .))
+}
+
+bysort prog_id: egen double F0_act = max(cond(year == `base', tot_fund, .))
+
+**********************************
+** Old Formula 
+************************************
+gen int fold = mod(prog_id, 5) + 1
+
 
 ** Baseline Funding ** 
-preserve
+gen _F0 = 0
+gen xb0 = . 
+
+forvalues f = 1/5 {
+	elasticnet linear `y' `x1' if year < 2022 & year > 2017 & fold != `f', alpha(0(0.1)1) selection(cv, folds(3))
+		qui predict _p if year < 2022 & year > 2017 & fold == `f', penalized 
+		replace xb0 = _p if year < 2022 & year > 2017 & fold == `f'
+		drop _p
+		
+
+}	
+	** Back to dollars (smearing so predictions average to actual dollars)
+	gen double _s = exp(`y' - xb0) if year < 2022 & year > 2017
+	quietly summarize _s
+	replace _F0 = exp(xb0) * r(mean) if year < 2022 & year > 2017
+	bys prog_id : egen F0_X0 = max(_F0)
+	drop xb0 _s
+	*/
+****************************************
+** New Formula 
+****************************************
 	
-keep if year < 2022 & year > 2017
-drop if strpos(program_name, "NA" )
+// Pooled across supplemental years
 
-** Starting with 220 obs
-local x1 "ln_pop in_care entries place_stability i.tier case_closures_total child_srv_casa recurrence_assessment_only reentry_total recurrence_no_recurrence recurrence_total n_counties emp_count rev_invest exp_salaries i.casa_type *_lag1"
+gen xb1_X1 = . 
+gen xb1_X0 = . 
+forvalues f = 1/5 {
+	
+elasticnet linear `y' `x2' if year >= 2022 & year <=2024 & fold != `f', alpha(0(0.1)1)  selection(cv, folds(3))
+ 
+	qui predict _p1 if year >= 2022 & year <=2024 & fold == `f', penalized
+	
+	** Re-predicting at baseline (2021) characteristic values
+	foreach v in `x3' {
+		gen double _o_`v' = `v'
+		quietly replace `v' = b_`v' if year >= 2022 & year <=2024 & fold == `f'
+	}
+	quietly predict double _p0 if year >= 2022 & year <=2024 & fold == `f', penalized
+	
+	** Restore original values
+	foreach v in `x3' {
+		qui replace `v' = _o_`v'
+		drop _o_`v'
+	}
+	
+	
+	replace xb1_X1 = _p1 if  year >= 2022 & year <=2024 & fold == `f'
+	replace xb1_X0 = _p0 if year >= 2022 & year <=2024 & fold == `f'
+	drop _p1 _p0
+}
 
+** Back to dollars (smearing so predictions average to actual dollars)
+	gen F1_X0 = . 
+	gen double _s = exp(`y' - xb1_X1) if year >= 2022 & year <=2024
+	quietly summarize _s
+	replace F1_X0 = exp(xb1_X0) * r(mean) if year >= 2022 & year <=2024
+	drop _s
+	
+	
+// Individual year instruments
 
-elasticnet linear `y' `x1', alpha(0(0.1)1) 
-	lassocoef, display(coef, penalized)       // shrunken coefficients from the selected model
-	lassocoef, display(coef, standardized)    // same, on a standardized scale
-	lassocoef, display(coef, postselection)   // OLS refit on the selected variables
-	lassogof   
+foreach t in 2022 2023 2024 {
+	forvalues f = 1/5 {
+		elasticnet linear `y' `x2'  if year == `t' & fold != `f', alpha(0(0.1)1) selection(cv, folds(3)) 
+		
+		qui predict _p1 if year == `t' & fold == `f', penalized
+		
+		** Re-predicting at baseline (2021) characteristic values
+		foreach v in `x3' {
+			gen double _o_`v' = `v'
+			quietly replace `v' = b_`v' if year == `t' & fold == `f'
+		}
+		
+		qui predict double _p0 if year == `t' & fold == `f', penalized
+		
+	** Restore original values
+	foreach v in `x3' {
+		qui replace `v' = _o_`v'
+		drop _o_`v'
+	}
+	
+	replace xb1_X1 = _p1 if year == `t' & fold == `f'
+	replace xb1_X0 = _p0 if year == `t' & fold == `f'
+	drop _p1 _p0
+}
+}
 
-restore
-
-
-
-// 2022
-
-preserve
-
-keep if year == 2022
-drop if strpos(program_name, "NA" )
-// 44 observations (one per program)
-
-
-
-local x2 "i.tier child_srv_casa children_in_foster_care ln_pop entries in_care case_closures_total exits_reunified exits_total in_care_rates_total recurrence_no_recurrence recurrence_total pop2020 n_counties emp_count rev_fundraising exp_salaries exp_mgmt i.casa_type *_lag1"
-
-elasticnet linear `y' `x2', alpha(0(0.1)1) 
-	lassocoef, display(coef, penalized)       // shrunken coefficients from the selected model
-	lassocoef, display(coef, standardized)    // same, on a standardized scale
-	lassocoef, display(coef, postselection)   // OLS refit on the selected variables
-	lassogof   
-
-restore 
-
-
-// 2023
- preserve
-keep if year == 2023
-drop if strpos(program_name, "NA") 
-// 44 obs, one per county.
-
-local x3 "i.tier child_srv_casa children_in_foster_care ln_pop entries in_care case_closures_total exits_total in_care_rates_total recurrence_no_recurrence recurrence_total reentry_total pop2020 n_counties emp_count rev_fundraising rev_invest exp_salaries exp_mgmt i.casa_type *_lag1"
-
-elasticnet linear `y' `x3', alpha(0(0.1)1) cluster(program_name)
-	lassocoef, display(coef, penalized)       // shrunken coefficients from the selected model
-	lassocoef, display(coef, standardized)    // same, on a standardized scale
-	lassocoef, display(coef, postselection)   // OLS refit on the selected variables
-	lassogof   
-
-
-restore 
-
-
-
-
-// 2024
-
-preserve
-keep if year == 2024
-drop if strpos(program_name, "NA") 
-// 44 obs, one per county.
-
-
-replace tier = 0 if mi(tier)
-
-local x3 "i.tier child_srv_casa children_in_foster_care ln_pop entries in_care case_closures_total exits_total in_care_rates_total recurrence_no_recurrence recurrence_total reentry_total pop2020 n_counties emp_count rev_fundraising rev_invest exp_salaries exp_mgmt i.casa_type *_lag1"
-
-elasticnet linear `y' `x3', alpha(0(0.1)1) 
-	lassocoef, display(coef, penalized)       // shrunken coefficients from the selected model
-	lassocoef, display(coef, standardized)    // same, on a standardized scale
-	lassocoef, display(coef, postselection)   // OLS refit on the selected variables
-	lassogof   
-
-
-restore 
+** Back to dollars (smearing so predictions average to actual dollars) 
+	foreach t in 2022 2023 2024 {
+	gen double _s = exp(`y' - xb1_X1) if year == `t'
+	quietly summarize _s
+	replace F1_X0 = exp(xb1_X0) * r(mean) if year == `t'
+	drop _s
+	
+        }
+	
 
 	
-preserve 
+********************************************************************************
+// 			CREATE INSTRUMENT 
+********************************************************************************
+** Treatment: Change in funds from before supplemental funding to after. Each will be the difference between funding in 2021 and the supp year.
+gen D_fund = (total_fund - F0_act)
 
-keep if year >= 2022 & year <=2024
-drop if strpos(program_name, "NA")
+** Instrument: change in funding due to the change in the formula. ie: F_1(X_0) - F_0(X_0)
+gen Z = (F1_X0 - F0_X0)
 
+foreach t in 2022 2023 2024 {
+	gen Z_`t' = Z * (year == `t')
+}
 
-replace tier = 0 if mi(tier)
-
-local x3 "i.tier child_srv_casa children_in_foster_care ln_pop entries in_care case_closures_total exits_total in_care_rates_total recurrence_no_recurrence recurrence_total reentry_total pop2020 n_counties emp_count rev_fundraising rev_invest exp_salaries exp_mgmt i.casa_type *_lag1"
-
-elasticnet linear `y' `x3', alpha(0(0.1)1) 
-	lassocoef, display(coef, penalized)       // shrunken coefficients from the selected model
-	lassocoef, display(coef, standardized)    // same, on a standardized scale
-	lassocoef, display(coef, postselection)   // OLS refit on the selected variables
-	lassogof   
-restore
-
+save "$onedrive/data/clean_data/instr_reg.dta", replace 
