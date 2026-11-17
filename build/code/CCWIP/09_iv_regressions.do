@@ -3,7 +3,7 @@
 ** Author: Michael
 ** Date: November 16, 2026
 *********************************************************************************
-
+/*
 * Clear environment
 clear all
 macro drop _all
@@ -113,7 +113,7 @@ reghdfe d_lag `z_pooled' z_lag `ctrl' if esamp_lag, absorb(`fe') cluster(prog_id
 testparm `z_pooled' z_lag
 
 
-
+*/
 
 * CLAUDE VERSION BELOW taking into account 08
 
@@ -147,10 +147,10 @@ runglobals
 use "$onedrive/data/clean_data/instr_reg.dta", clear
 
 local base 2021                    // pre-period year
-local y    "permanence_12m"        // outcome (in levels; differenced from 2021 below)
+local y    "mlos_total"        // outcome (in levels; differenced from 2021 below)
 
 ** Per child: state funding per child in care, with children in care fixed at the base year so the outcome can't move the denominator. Instrument scaled the same way. Set to 0 to use dollars. THIS IS A SUGGESTION FROM CLAUDE THAT I HAVE TURNED OFF RIGHT NOW.
-local per_child 0
+local per_child 1
 
 ** Fixed effects and controls
 ** Everything is a change from 2021, so the program fixed effect is already differenced out (like Dahl & Lochner's d02 variables). Only year effects are needed.
@@ -170,11 +170,11 @@ bysort prog_id: egen double care0 = max(cond(year == `base', in_care, .))
 ** Treatment: change in state funding since 2021 (D_fund from 08). Instrument: change in funding due to the formula change, F1(X0) - F0(X0) (Z from 08)
 if `per_child' {
 	gen double dfund = D_fund / care0 / 1000      // $1,000s per 2021 child in care
-	gen double zfund = Z      / care0 / 1000
+	gen double zfund = Z_pool      / care0 / 1000
 }
 else {
 	gen double dfund = D_fund / 1000              // $1,000s
-	gen double zfund = Z      / 1000
+	gen double zfund = Z_pool      / 1000
 }
 local d        "dfund"
 local z_pooled "zfund"
@@ -186,10 +186,12 @@ gen double dy = `y' - y0
 ** Year-specific endogenous variables and instruments (change in that year, 0 otherwise)
 foreach t in 2022 2023 2024 {
 	gen double d_`t' = `d'        * (year == `t')
-	gen double z_`t' = `z_pooled' * (year == `t')
+	** EM Edit for consistency with 08
+	//gen double z_`t' = `z_pooled' * (year == `t')
+	gen double zfund_`t' = Z_`t' / care0 / 1000
 }
 local d_nonpooled "d_2022 d_2023 d_2024"
-local z_nonpooled "z_2022 z_2023 z_2024"
+local z_nonpooled "zfund_2022 zfund_2023 zfund_2024"
 
 ** Last year's change in funding and instrument. In 2021 both are 0 by construction (no change from itself), so 2022's lag is 0.
 replace `d'        = 0 if year == `base'
