@@ -21,6 +21,7 @@ runglobals
 use "$onedrive/data/clean_data/instr_reg.dta", clear
 
 local base 2021                    // pre-period year
+local mlos_log 0                   // 1 = median length of stay in logs, 0 = in levels (updates the outcome and the table labels)
 
 ** Outcomes (in levels; differenced from 2021 below), with names for the table headers
 local outcomes "mlos_total place_stability permanence_12m"
@@ -39,9 +40,17 @@ local dv_mlos_total      "Change in median length of stay"
 local dv_place_stability "Change in placement stability"
 local dv_permanence_12m  "Change in permanency"
 
+** Log version of median length of stay: replace its labels when the switch is on
+if `mlos_log' {
+	local t_mlos_total  "Log Median Length of Stay"
+	local h1_mlos_total "Log median length"
+	local dv_mlos_total "Change in log median length of stay"
+}
+
 ** Funding is in logs: treatment and instrument are changes in log funding since 2021 (log points, roughly the percent change).
 ** Coefficients are the change in the outcome (in its own units) for a 1 log-point increase in state funding; for a 10% increase multiply by about 0.095.
 ** No per-child scaling or dividing by 1,000: with a fixed 2021 denominator, ln(F_t/c) - ln(F_2021/c) = ln(F_t) - ln(F_2021), so both cancel in log changes.
+** With mlos_log = 1, the median length of stay coefficient is an elasticity: the percent change in median length of stay for a 1 percent increase in state funding.
 
 ** Fixed effects and controls
 ** Everything is a change from 2021, so the program fixed effect is already differenced out (like Dahl & Lochner's d02 variables). Only year effects are needed.
@@ -70,9 +79,15 @@ local d        "dlnfund"
 local z_pooled "zln"
 
 ** Outcomes: change since 2021, to match the treatment and instrument
+** With mlos_log = 1, median length of stay is logged first, so dy_mlos_total = ln(mlos_total) - ln(mlos_total in 2021)
 foreach v of local outcomes {
-	bysort prog_id: egen double y0_`v' = max(cond(year == `base', `v', .))
-	gen double dy_`v' = `v' - y0_`v'
+	local yv "`v'"
+	if `mlos_log' & "`v'" == "mlos_total" {
+		gen double ln_mlos_total = ln(mlos_total)
+		local yv "ln_mlos_total"
+	}
+	bysort prog_id: egen double y0_`v' = max(cond(year == `base', `yv', .))
+	gen double dy_`v' = `yv' - y0_`v'
 }
 
 ** Year-specific endogenous variables and instruments (change in that year, 0 otherwise). Year instruments come from the year-by-year models, as in 08 (Z_2022-Z_2024).
