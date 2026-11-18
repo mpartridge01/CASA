@@ -1,0 +1,40 @@
+\begin{table}[htbp]
+\centering
+\caption{OLS and IV Estimates of the Effect of State CASA Funding on Foster Care Outcomes}
+\label{tab:iv_main}
+\begin{tabular}{l*{3}{c}}
+\toprule
+ & Median length & Placement & Permanency \\
+ & of stay & stability & within 12 months \\
+ & (1) & (2) & (3) \\
+\midrule
+\multicolumn{5}{l}{\textit{Panel A. OLS}} \\
+Change in state funding & -19.114 & 0.076 & 0.030 \\
+ & (14.854) & (0.109) & (1.628) \\
+R\textsuperscript{2} & 0.032 & 0.006 & 0.003 \\
+Root MSE & 139.958 & 1.250 & 10.109 \\
+Observations & 127 & 114 & 107 \\
+\addlinespace
+\multicolumn{5}{l}{\textit{Panel B. IV, one instrument}} \\
+Change in state funding & -22.318 & -0.038 & -5.751 \\
+ & (39.289) & (0.607) & (4.340) \\
+First-stage coefficient on instrument & 0.415\textsuperscript{**} & 0.578\textsuperscript{**} & 0.457\textsuperscript{**} \\
+ & (0.069) & (0.220) & (0.158) \\
+First-stage F-statistic & 36.36 & 6.90 & 8.36 \\
+Partial R\textsuperscript{2} of instrument & 0.457 & 0.349 & 0.249 \\
+R\textsuperscript{2} & 0.022 & -0.004 & -0.196 \\
+Root MSE & 140.004 & 1.255 & 11.056 \\
+Observations & 127 & 114 & 107 \\
+\addlinespace
+\multicolumn{5}{l}{\textit{Panel C. IV, one instrument per year}} \\
+Change in state funding & -18.974 & 0.247 & -4.556 \\
+ & (39.589) & (0.416) & (3.602) \\
+First-stage F-statistic & 20.97 & 13.75 & 6.39 \\
+Partial R\textsuperscript{2} of instruments & 0.477 & 0.407 & 0.291 \\
+Hansen J (p-value) & 1.64 (0.440) & 1.66 (0.436) & 2.20 (0.332) \\
+R\textsuperscript{2} & 0.023 & -0.014 & -0.123 \\
+Root MSE & 139.958 & 1.261 & 10.715 \\
+Observations & 127 & 114 & 107 \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,21 @@
+\begin{table}[htbp]
+\centering
+\label{tab:iv_permanence_12m}
+\begin{tabular}{l*{4}{c}}
+\toprule
+ & \multicolumn{4}{c}{Change in permanency} \\
+\cmidrule(lr){2-5}
+ & OLS & OLS & IV & IV \\
+ &  &  & One instrument & One instrument per year \\
+ & (1) & (2) & (3) & (4) \\
+\midrule
+Change in log state funding & 0.114 & 1.721 & -3.754 & -4.339\textsuperscript{*} \\
+ & (1.501) & (1.857) & (2.646) & (2.153) \\
+First-stage F-statistic &  &  & 7.96 & 73.53 \\
+R\textsuperscript{2} & 0.000 & 0.807 & -0.073 & -0.096 \\
+Program fixed effects & No & Yes & No & No \\
+Year fixed effects & No & Yes & Yes & Yes \\
+Observations & 107 & 104 & 107 & 107 \\
+\bottomrule
+\end{tabular}
+\end{table}

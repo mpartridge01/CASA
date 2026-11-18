@@ -1,0 +1,21 @@
+\begin{table}[htbp]
+\centering
+\label{tab:iv_place_stability}
+\begin{tabular}{l*{4}{c}}
+\toprule
+ & \multicolumn{4}{c}{Change in placement stability} \\
+\cmidrule(lr){2-5}
+ & OLS & OLS & IV & IV \\
+ &  &  & One instrument & One instrument per year \\
+ & (1) & (2) & (3) & (4) \\
+\midrule
+Change in log state funding & -0.188 & -0.114 & 0.061 & -0.363\textsuperscript{*} \\
+ & (0.198) & (0.241) & (0.585) & (0.195) \\
+First-stage F-statistic &  &  & 15.02 & 128.60 \\
+R\textsuperscript{2} & 0.011 & 0.553 & -0.008 & 0.001 \\
+Program fixed effects & No & Yes & No & No \\
+Year fixed effects & No & Yes & Yes & Yes \\
+Observations & 114 & 114 & 114 & 114 \\
+\bottomrule
+\end{tabular}
+\end{table}
