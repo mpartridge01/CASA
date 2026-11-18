@@ -39,8 +39,9 @@ local dv_mlos_total      "Change in median length of stay"
 local dv_place_stability "Change in placement stability"
 local dv_permanence_12m  "Change in permanency"
 
-** Per child: state funding per child in care, with children in care fixed at the base year so the outcome can't move the denominator. Instrument scaled the same way. Set to 0 to use dollars. THIS IS A SUGGESTION FROM CLAUDE THAT I HAVE TURNED OFF RIGHT NOW.
-local per_child 1
+** Funding is in logs: treatment and instrument are changes in log funding since 2021 (log points, roughly the percent change).
+** Coefficients are the change in the outcome (in its own units) for a 1 log-point increase in state funding; for a 10% increase multiply by about 0.095.
+** No per-child scaling or dividing by 1,000: with a fixed 2021 denominator, ln(F_t/c) - ln(F_2021/c) = ln(F_t) - ln(F_2021), so both cancel in log changes.
 
 ** Fixed effects and controls
 ** Everything is a change from 2021, so the program fixed effect is already differenced out (like Dahl & Lochner's d02 variables). Only year effects are needed.
@@ -56,20 +57,17 @@ xtset prog_id year
 * 						Treatment, instrument and outcome				       *
 ********************************************************************************
 
-** Children in care in the base year (denominator for per-child versions)
-bysort prog_id: egen double care0 = max(cond(year == `base', in_care, .))
+** Treatment: change in log state funding since 2021 = ln(funding this year) - ln(funding in 2021). F0_act = actual 2021 funding (from 08). Exactly 0 in 2021.
+gen double dlnfund = ln(total_fund) - ln(F0_act)
 
-** Treatment: change in state funding since 2021 (D_fund from 08). Instrument: change in funding due to the formula change, F1(X0) - F0(X0) (Z from 08)
-if `per_child' {
-	gen double dfund = D_fund / care0 / 1000      // $1,000s per 2021 child in care
-	gen double zfund = Z_pool      / care0 / 1000
-}
-else {
-	gen double dfund = D_fund / 1000              // $1,000s
-	gen double zfund = Z_pool      / 1000
-}
-local d        "dfund"
-local z_pooled "zfund"
+** Instrument: change in log funding due to the formula change = ln F1(X0) - ln F0(X0), both formulas at 2021 characteristics (from 08)
+**   Pooled model (one formula for 2022-2024): F1_X0_pool. The smearing factor from 08 is a constant shift in logs and is absorbed by the year fixed effects.
+gen double zln = ln(F1_X0_pool) - ln(F0_X0)
+**   Year-by-year models (a formula for each year): F1_X0
+gen double zln_yr = ln(F1_X0) - ln(F0_X0)
+
+local d        "dlnfund"
+local z_pooled "zln"
 
 ** Outcomes: change since 2021, to match the treatment and instrument
 foreach v of local outcomes {
@@ -77,17 +75,15 @@ foreach v of local outcomes {
 	gen double dy_`v' = `v' - y0_`v'
 }
 
-** Year-specific endogenous variables and instruments (change in that year, 0 otherwise)
+** Year-specific endogenous variables and instruments (change in that year, 0 otherwise). Year instruments come from the year-by-year models, as in 08 (Z_2022-Z_2024).
 foreach t in 2022 2023 2024 {
-	gen double d_`t' = `d'        * (year == `t')
-	** EM Edit for consistency with 08
-	//gen double z_`t' = `z_pooled' * (year == `t')
-	gen double zfund_`t' = Z_`t' / care0 / 1000
+	gen double d_`t'   = `d'    * (year == `t')
+	gen double zln_`t' = zln_yr * (year == `t')
 }
 local d_nonpooled "d_2022 d_2023 d_2024"
-local z_nonpooled "zfund_2022 zfund_2023 zfund_2024"
+local z_nonpooled "zln_2022 zln_2023 zln_2024"
 
-** Last year's change in funding and instrument. In 2021 both are 0 by construction (no change from itself), so 2022's lag is 0.
+** Last year's change in log funding and instrument. In 2021 both are 0 by construction (no change from itself), so 2022's lag is 0.
 replace `d'        = 0 if year == `base'
 replace `z_pooled' = 0 if year == `base'
 bysort prog_id (year): gen double d_lag = `d'[_n-1]        if year == year[_n-1] + 1
@@ -162,7 +158,7 @@ foreach v of local outcomes {
 	capture drop esamp_pool esamp_iv3 esamp_yr esamp_lag
 
 	***** Pooled: all three years together (one endogenous, one instrument)
-	** Assumes a dollar has the same effect in every year. Just-identified.
+	** Assumes a log point of funding has the same effect in every year. Just-identified.
 	** Report: the Kleibergen-Paap rk Wald F (cluster-robust first-stage F) and the Anderson-Rubin test; both are in the ivreghdfe output.
 	ivreghdfe dy_`v' (`d' = `z_pooled') `ctrl' if `samp', absorb(`fe') cluster(prog_id) first
 	gen esamp_pool = e(sample)
@@ -226,7 +222,7 @@ foreach v of local outcomes {
 	* First stage on this spec's sample (Panel B of the first-stage table)
 	reghdfe `d' `z_nonpooled' `ctrl' if esamp_iv3, absorb(`fe') cluster(prog_id)
 	foreach t in 2022 2023 2024 {
-		cellfmt `=_b[zfund_`t']' `=_se[zfund_`t']' `=e(df_r)'
+		cellfmt `=_b[zln_`t']' `=_se[zln_`t']' `=e(df_r)'
 		global R_fsB_b`t'_`j'  "`r(b)'"
 		global R_fsB_se`t'_`j' "`r(se)'"
 	}
@@ -263,7 +259,7 @@ foreach v of local outcomes {
 	global R_yr_f`j' "`fl'"
 
 	***** Current and last year's funding (two endogenous, two instruments)
-	** Does money take a year to show up in outcomes? The sum is the cumulative effect of a dollar kept for two years. Dahl does something like this in Table 5. Maybe it makes sense in our setting?
+	** Does money take a year to show up in outcomes? The sum is the cumulative effect of a log point of funding kept for two years. Dahl does something like this in Table 5. Maybe it makes sense in our setting?
 	** Only 2023-2024 have a nonzero lag, so this first stage will be weaker.
 	ivreghdfe dy_`v' (`d' d_lag = `z_pooled' z_lag) `ctrl' if `samp', absorb(`fe') cluster(prog_id) first
 	cellfmt `=_b[`d']' `=_se[`d']' `=e(df_r)'
@@ -309,7 +305,7 @@ foreach v of local outcomes {
 	file write tab " &  &  & One instrument & One instrument per year \\" _n
 	file write tab " & (1) & (2) & (3) & (4) \\" _n "\midrule" _n
 
-	texrow tab "Change in state funding" `v'_b 4
+	texrow tab "Change in log state funding" `v'_b 4
 	texrow tab "" `v'_se 4
 	texrow tab "First-stage F-statistic" `v'_f 4
 	texrow tab "R\textsuperscript{2}" `v'_r2 4
@@ -330,12 +326,12 @@ file write tab "\begin{table}[htbp]" _n "\centering" _n
 file write tab "\label{tab:iv_first_stage}" _n
 file write tab "\begin{tabular}{l*{$NOUT}{c}}" _n "\toprule" _n
 ** Dependent variable as a header across all columns; the columns are the samples for each outcome
-file write tab " & \multicolumn{$NOUT}{c}{Change in state funding since 2021} \\" _n
+file write tab " & \multicolumn{$NOUT}{c}{Change in log state funding since 2021} \\" _n
 file write tab "\cmidrule(lr){2-`=$NOUT+1'}" _n
 texhead tab "Sample:"
 
 file write tab "\multicolumn{`=$NOUT+1'}{l}{\textit{Panel A. One instrument}} \\" _n
-texrow tab "Predicted change in funding" fsA_b $NOUT
+texrow tab "Predicted change in log funding" fsA_b $NOUT
 texrow tab "" fsA_se $NOUT
 texrow tab "F-statistic on instrument" fsA_f $NOUT
 texrow tab "R\textsuperscript{2}" fsA_r2 $NOUT
@@ -346,7 +342,7 @@ file write tab "\midrule" _n
 
 file write tab "\multicolumn{`=$NOUT+1'}{l}{\textit{Panel B. One instrument per year}} \\" _n
 foreach t in 2022 2023 2024 {
-	texrow tab "Predicted change in funding \(\times\) `t'" fsB_b`t'_ $NOUT
+	texrow tab "Predicted change in log funding \(\times\) `t'" fsB_b`t'_ $NOUT
 	texrow tab "" fsB_se`t'_ $NOUT
 }
 texrow tab "F-statistic on instruments (joint)" fsB_f $NOUT
@@ -374,7 +370,7 @@ texhead tab "Outcome:"
 
 file write tab "\multicolumn{`=$NOUT+1'}{l}{\textit{Panel A. Separate effect each year}} \\" _n
 foreach t in 2022 2023 2024 {
-	texrow tab "Change in state funding \(\times\) `t'" yr_b`t'_ $NOUT
+	texrow tab "Change in log state funding \(\times\) `t'" yr_b`t'_ $NOUT
 	texrow tab "" yr_se`t'_ $NOUT
 }
 texrow tab "Average of the three years" yr_avg_b $NOUT
@@ -384,9 +380,9 @@ texrow tab "Observations" yr_n $NOUT
 file write tab "\midrule" _n
 
 file write tab "\multicolumn{`=$NOUT+1'}{l}{\textit{Panel B. Current and last year's funding}} \\" _n
-texrow tab "Change in state funding, current year" lag_b0_ $NOUT
+texrow tab "Change in log state funding, current year" lag_b0_ $NOUT
 texrow tab "" lag_se0_ $NOUT
-texrow tab "Change in state funding, last year" lag_b1_ $NOUT
+texrow tab "Change in log state funding, last year" lag_b1_ $NOUT
 texrow tab "" lag_se1_ $NOUT
 texrow tab "Sum of current and last year" lag_sum_b $NOUT
 texrow tab "" lag_sum_se $NOUT
@@ -396,7 +392,6 @@ texrow tab "Observations" lag_n $NOUT
 file write tab "\bottomrule" _n "\end{tabular}" _n "\end{table}" _n
 file close tab
 */
-
 
 /*
 
