@@ -4,8 +4,8 @@
 ** Author: Emily
 ** Date: November 16, 2026
 *********************************************************************************
-*set trace on
-*set tracedepth 2
+set trace on
+set tracedepth 2
 * Clear environment
 clear all
 macro drop _all
@@ -38,9 +38,9 @@ foreach v in emp_count rev_fundraising rev_invest exp_salaries exp_grants exp_pr
 *******************************************************************************
 local base 2021
 local y "ln_fund"
-local x1 "ln_pop in_care entries place_stability i.tier case_closures_total child_srv_casa recurrence_assessment_only reentry_total recurrence_no_recurrence recurrence_total n_counties emp_count rev_invest exp_salaries i.casa_type *_lag1 jc_tier_2013"
+local x1 "ln_pop in_care entries i.tier case_closures_total child_srv_casa  n_counties emp_count rev_invest exp_salaries i.casa_type *_lag1 jc_tier_2013"
 
-local x2 "i.tier child_srv_casa children_in_foster_care ln_pop entries in_care case_closures_total exits_total in_care_rates_total recurrence_no_recurrence recurrence_total pop2020 n_counties emp_count rev_fundraising rev_invest exp_salaries exp_mgmt i.casa_type *_lag1 jc_tier_2013"
+local x2 "i.tier child_srv_casa children_in_foster_care ln_pop entries in_care case_closures_total exits_total in_care_rates_total pop2020 n_counties emp_count rev_fundraising rev_invest exp_salaries exp_mgmt i.casa_type *_lag1 jc_tier_2013"
 
 local x3 "tier child_srv_casa children_in_foster_care ln_pop entries in_care case_closures_total exits_total in_care_rates_total recurrence_no_recurrence recurrence_total pop2020 n_counties emp_count rev_fundraising rev_invest exp_salaries exp_mgmt casa_type jc_tier_2013 emp_count_lag1 rev_fundraising_lag1 rev_invest_lag1 exp_salaries_lag1 exp_grants_lag1 exp_prog_lag1 exp_mgmt_lag1 casa_spend_lag1"
 
@@ -76,7 +76,7 @@ forvalues f = 1/5 {
 	gen double _s = exp(`y' - xb0) if year < 2022 & year > 2017
 	quietly summarize _s
 	replace _F0 = exp(xb0) * r(mean) if year < 2022 & year > 2017
-	bys prog_id : egen double F0_X0 = max(cond(year == `base', _F0, .))
+	bys prog_id : egen F0_X0 = max(_F0)
 	drop xb0 _s
 	*/
 ****************************************
@@ -152,7 +152,7 @@ foreach t in 2022 2023 2024 {
 ** Back to dollars (smearing so predictions average to actual dollars)
 	gen F1_X0 = .  
 	foreach t in 2022 2023 2024 {
-	gen double F_s = exp(`y' - xb1_X1) if year == `t'
+	gen double _s = exp(`y' - xb1_X1) if year == `t'
 	quietly summarize _s
 	replace F1_X0 = exp(xb1_X0) * r(mean) if year == `t'
 	drop _s
@@ -168,16 +168,11 @@ foreach t in 2022 2023 2024 {
 gen D_fund = (total_fund - F0_act)
 
 ** Instrument: change in funding due to the change in the formula. ie: F_1(X_0) - F_0(X_0)
-gen double Z_pool = (F1_X0_pool - F0_X0)
-gen double Z_yr   = (F1_X0      - F0_X0)
-
-** In 2021 there's no formula change, so the instrument is 0 (needed for last year's instrument in 09)
-replace Z_pool = 0 if year == `base'
-replace Z_yr   = 0 if year == `base'
+gen Z_pool = (F1_X0_pool - F0_X0)
+gen Z = (F1_X0 - F0_X0)
 
 foreach t in 2022 2023 2024 {
-	gen double Z_`t'      = Z_yr   * (year == `t')
-	gen double Z_pool_`t' = Z_pool * (year == `t')
+	gen Z_`t' = Z * (year == `t')
 }
-
+drop Z 
 save "$onedrive/data/clean_data/instr_reg.dta", replace 
