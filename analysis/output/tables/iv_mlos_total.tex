@@ -1,0 +1,21 @@
+\begin{table}[htbp]
+\centering
+\label{tab:iv_mlos_total}
+\begin{tabular}{l*{4}{c}}
+\toprule
+ & \multicolumn{4}{c}{Change in median length of stay} \\
+\cmidrule(lr){2-5}
+ & OLS & OLS & IV & IV \\
+ &  &  & One instrument & One instrument per year \\
+ & (1) & (2) & (3) & (4) \\
+\midrule
+Change in state funding & -28.391\textsuperscript{*} & -40.938 & 97.918 & -18.974 \\
+ & (16.581) & (28.812) & (122.620) & (39.589) \\
+First-stage F-statistic &  &  & 2.36 & 20.97 \\
+R\textsuperscript{2} & 0.041 & 0.697 & -0.770 & 0.023 \\
+Program fixed effects & No & Yes & No & No \\
+Year fixed effects & No & Yes & Yes & Yes \\
+Observations & 123 & 123 & 123 & 127 \\
+\bottomrule
+\end{tabular}
+\end{table}

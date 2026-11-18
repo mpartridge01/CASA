@@ -44,6 +44,20 @@ local x2 "i.tier child_srv_casa children_in_foster_care ln_pop entries in_care c
 
 local x3 "tier child_srv_casa children_in_foster_care ln_pop entries in_care case_closures_total exits_total in_care_rates_total recurrence_no_recurrence recurrence_total pop2020 n_counties emp_count rev_fundraising rev_invest exp_salaries exp_mgmt casa_type jc_tier_2013 emp_count_lag1 rev_fundraising_lag1 rev_invest_lag1 exp_salaries_lag1 exp_grants_lag1 exp_prog_lag1 exp_mgmt_lag1 casa_spend_lag1"
 
+** NEW: out-of-sample R2 of a cross-fitted prediction: 1 - sum of squared prediction errors / total sum of squares of the actual values
+capture program drop oosr2
+program define oosr2, rclass
+	args y xb cond
+	tempvar e2
+	quietly gen double `e2' = (`y' - `xb')^2 if (`cond') & !missing(`y', `xb')
+	quietly summarize `e2'
+	local ssr = r(sum)
+	local n   = r(N)
+	quietly summarize `y' if (`cond') & !missing(`y', `xb')
+	return scalar r2 = 1 - `ssr' / (r(Var) * (r(N) - 1))
+	return scalar N  = `n'
+end
+
 ********************************************************************************
 // 			PREDICTIONS
 ********************************************************************************
@@ -72,6 +86,11 @@ forvalues f = 1/5 {
 		
 
 }	
+	** NEW: out-of-sample R2, old formula (2018-2021)
+	oosr2 `y' xb0 "year < 2022 & year > 2017"
+	local r2_old = strtrim(string(r(r2), "%9.3f"))
+	local n_old  = strtrim(string(r(N),  "%9.0fc"))
+
 	** Back to dollars (smearing so predictions average to actual dollars)
 	gen double _s = exp(`y' - xb0) if year < 2022 & year > 2017
 	quietly summarize _s
@@ -113,6 +132,11 @@ elasticnet linear `y' `x2' if year >= 2022 & year <=2024 & fold != `f', alpha(0(
 	drop _p1 _p0
 }
 
+** NEW: out-of-sample R2, new formula pooled (2022-2024). Computed here because the year-by-year loop below overwrites xb1_X1.
+oosr2 `y' xb1_X1 "year >= 2022 & year <= 2024"
+local r2_pool = strtrim(string(r(r2), "%9.3f"))
+local n_pool  = strtrim(string(r(N),  "%9.0fc"))
+
 ** Back to dollars (smearing so predictions average to actual dollars)
 	gen F1_X0_pool = . 
 	gen double _s = exp(`y' - xb1_X1) if year >= 2022 & year <=2024
@@ -149,6 +173,13 @@ foreach t in 2022 2023 2024 {
 }
 }
 
+** NEW: out-of-sample R2, new formula fit separately for each year
+foreach t in 2022 2023 2024 {
+	oosr2 `y' xb1_X1 "year == `t'"
+	local r2_`t' = strtrim(string(r(r2), "%9.3f"))
+	local n_`t'  = strtrim(string(r(N),  "%9.0fc"))
+}
+
 ** Back to dollars (smearing so predictions average to actual dollars)
 	gen F1_X0 = .  
 	foreach t in 2022 2023 2024 {
@@ -174,5 +205,26 @@ gen Z = (F1_X0 - F0_X0)
 foreach t in 2022 2023 2024 {
 	gen Z_`t' = Z * (year == `t')
 }
-drop Z 
+
 save "$onedrive/data/clean_data/instr_reg.dta", replace 
+
+********************************************************************************
+// 			NEW: TABLE OF PREDICTION R2 (no title)
+********************************************************************************
+** Out-of-sample R2 of each elastic net prediction of log state funding (each program predicted by a model fit on the other folds)
+file open tab using "$analysisoutput/tables/pred_r2.tex", write replace
+file write tab "\begin{table}[htbp]" _n "\centering" _n
+file write tab "\label{tab:pred_r2}" _n
+file write tab "\begin{tabular}{lcc}" _n "\toprule" _n
+file write tab " & Out-of-sample R\textsuperscript{2} & Observations \\" _n
+file write tab " & (1) & (2) \\" _n "\midrule" _n
+file write tab "\multicolumn{3}{l}{\textit{Old formula}} \\" _n
+file write tab "2018--2021 & `r2_old' & `n_old' \\" _n
+file write tab "\midrule" _n
+file write tab "\multicolumn{3}{l}{\textit{New formula}} \\" _n
+file write tab "Pooled, 2022--2024 & `r2_pool' & `n_pool' \\" _n
+file write tab "2022 only & `r2_2022' & `n_2022' \\" _n
+file write tab "2023 only & `r2_2023' & `n_2023' \\" _n
+file write tab "2024 only & `r2_2024' & `n_2024' \\" _n
+file write tab "\bottomrule" _n "\end{tabular}" _n "\end{table}" _n
+file close tab
