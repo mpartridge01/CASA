@@ -44,6 +44,8 @@ local x2 "i.tier child_srv_casa children_in_foster_care ln_pop entries in_care c
 
 local x3 "tier child_srv_casa children_in_foster_care ln_pop entries in_care case_closures_total exits_total in_care_rates_total recurrence_no_recurrence recurrence_total pop2020 n_counties emp_count rev_fundraising rev_invest exp_salaries exp_mgmt casa_type jc_tier_2013 emp_count_lag1 rev_fundraising_lag1 rev_invest_lag1 exp_salaries_lag1 exp_grants_lag1 exp_prog_lag1 exp_mgmt_lag1 casa_spend_lag1"
 
+local xold "i.tier child_srv_casa children_in_foster_care ln_pop entries in_care case_closures_total exits_total in_care_rates_total recurrence_no_recurrence recurrence_total pop2020 n_counties emp_count rev_fundraising rev_invest exp_salaries exp_mgmt i.casa_type *_lag1 jc_tier_2013"
+
 ********************************************************************************
 // 			PREDICTIONS
 ********************************************************************************
